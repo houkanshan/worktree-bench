@@ -59,8 +59,25 @@ Notes:
 cd /Users/mhou/code/worktree-bench
 
 go build ./cmd/worktree-bench
-# Optional: move binary into PATH
+ln -s "$(pwd)/worktree-bench" /usr/local/bin/worktree-bench
+# Or move it for a one-off install
 # mv worktree-bench /usr/local/bin/
+```
+
+## Shell setup (recommended)
+### bash/zsh
+```bash
+mkdir -p ~/.config/worktree-bench
+cp ./scripts/wtb.bash ~/.config/worktree-bench/wtb.bash
+# Add to your ~/.bashrc or ~/.zshrc:
+source ~/.config/worktree-bench/wtb.bash
+```
+
+### fish
+```fish
+mkdir -p ~/.config/fish/functions
+cp ./scripts/wtb.fish ~/.config/fish/functions/wtb.fish
+# New shells will auto-load; run `source ~/.config/fish/functions/wtb.fish` to load now.
 ```
 
 ## Usage
@@ -105,12 +122,14 @@ Option B: source the helper function (opens the dashboard)
 source ./scripts/wtb.bash
 wtb
 ```
+If you followed the shell setup above, you can just run `wtb`.
 
 ### Switch workbench (fish)
 ```fish
 source ./scripts/wtb.fish
 wtb
 ```
+If you followed the shell setup above, you can just run `wtb`.
 
 ## Shell directives
 `worktree-bench switch` writes `cd 'path'` to a directive file (env `WTB_DIRECTIVE_FILE`) or prints to stdout. The provided wrapper functions consume that output and `eval` it in your shell so the working directory changes in the current session.
