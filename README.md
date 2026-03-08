@@ -11,6 +11,44 @@ A Bubble Tea TUI for managing a pool of git worktree workbenches.
 - **Status line** shows branch, PR (via `gh`), and uncommitted line counts
 - **Shell directives** for `cd` so switching updates your shell session
 
+## How it works (ASCII diagram)
+```
+Developer workflow
+──────────────────
+
+┌───────────────┐   create / adopt / switch   ┌────────────────────────┐
+│ developer     │ ──────────────────────────> │ worktree-bench (TUI)   │
+│ (current cwd) │                              └────────────┬──────────┘
+└───────────────┘                                           │
+                                                           │ switch anytime if scope grows
+                                                           ▼
+                     workbenches (more minimal > light > full)
+
+  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+  │ minimal/<name>       │  │ minimal/<name>       │  │ minimal/<name>       │
+  │ PR review / reading  │  │ tiny change          │  │ temporary use        │
+  │ fast + cheap         │  │ fast + cheap         │  │ fast + cheap         │
+  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘
+
+        ┌──────────────────────┐      ┌──────────────────────┐
+        │ light/<name>         │      │ light/<name>         │
+        │ small fixes          │      │ quick changes        │
+        │ setup only           │      │ setup only           │
+        └──────────────────────┘      └──────────────────────┘
+
+                 ┌──────────────────────┐
+                 │ full/<name>          │
+                 │ heavy features       │
+                 │ setup + dev server   │
+                 └──────────────────────┘
+
+Notes:
+- Pick minimal for review/reading or tiny changes.
+- Pick light for small fixes.
+- Pick full for heavy feature work.
+- When full/light are busy, use a temporary minimal/light bench.
+```
+
 ## Requirements
 - `git`
 - `gh` (GitHub CLI) for PR checkout and PR status
