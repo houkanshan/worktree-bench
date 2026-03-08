@@ -52,13 +52,17 @@ func EnsureSettings(repoRoot string) (config.Settings, error) {
 	if err != nil {
 		return config.Settings{}, err
 	}
+	detectRoot := repoRoot
+	if mainRoot, err := gitutil.MainWorktreeRoot(repoRoot); err == nil && mainRoot != "" {
+		detectRoot = mainRoot
+	}
 	updated := false
 	if settings.SetupCmd == "" {
-		settings.SetupCmd = DetectSetupCmd(repoRoot)
+		settings.SetupCmd = DetectSetupCmd(detectRoot)
 		updated = true
 	}
 	if settings.DevCmd == "" {
-		settings.DevCmd = DetectDevCmd(repoRoot)
+		settings.DevCmd = DetectDevCmd(detectRoot)
 		updated = true
 	}
 	if updated {

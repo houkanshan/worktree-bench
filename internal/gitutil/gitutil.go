@@ -26,6 +26,15 @@ func MainWorktreeRoot(path string) (string, error) {
 	if filepath.Base(commonDir) == ".git" {
 		return filepath.Dir(commonDir), nil
 	}
+	sep := string(filepath.Separator)
+	needle := sep + ".git" + sep
+	if idx := strings.Index(commonDir, needle); idx != -1 {
+		root := commonDir[:idx]
+		if root == "" {
+			root = sep
+		}
+		return root, nil
+	}
 	return path, nil
 }
 
