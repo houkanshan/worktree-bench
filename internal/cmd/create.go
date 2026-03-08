@@ -8,7 +8,6 @@ import (
 	"worktree-bench/internal/bench"
 	"worktree-bench/internal/config"
 	"worktree-bench/internal/gitutil"
-	"worktree-bench/internal/ui"
 )
 
 func newCreateCommand() *cobra.Command {
@@ -29,32 +28,17 @@ func newCreateCommand() *cobra.Command {
 				return err
 			}
 
-			result, err := ui.RunCreate(pool.Benches)
+			flow, err := runCreateFlow(repoRoot, settings, pool)
 			if err != nil {
 				return err
 			}
-			if result.Cancelled {
-				return nil
+			if flow.changed {
+				if err := config.SavePool(repoRoot, flow.pool); err != nil {
+					return err
+				}
 			}
-
-			input := bench.CreateInput{
-				Type:        result.Type,
-				UseExisting: result.UseExisting,
-				BenchID:     result.BenchID,
-				Name:        result.Name,
-				Ref:         result.Ref,
-			}
-
-			pool, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
-			if err != nil {
-				return err
-			}
-			if err := config.SavePool(repoRoot, pool); err != nil {
-				return err
-			}
-
-			if created != nil {
-				fmt.Fprintf(os.Stdout, "Created workbench %s at %s\n", created.Name, created.Path)
+			if flow.message != "" {
+				fmt.Fprintln(os.Stdout, flow.message)
 			}
 			return nil
 		},

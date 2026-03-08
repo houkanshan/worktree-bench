@@ -17,7 +17,7 @@ type statusModel struct {
 func RunStatus(benches []config.Workbench) error {
 	statuses := LoadBenchStatuses(benches)
 	model := newStatusModel(benches, statuses)
-	prog := tea.NewProgram(model)
+	prog := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := prog.Run()
 	return err
 }

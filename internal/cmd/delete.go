@@ -37,16 +37,15 @@ func newDeleteCommand() *cobra.Command {
 			}
 
 			force, _ := cmd.Flags().GetBool("force")
-			pool, removed, err := bench.DeleteWorkbench(repoRoot, pool, bench.DeleteInput{BenchID: result.BenchID, Force: force})
+			updated, message, err := runDeleteFlow(repoRoot, pool, result.BenchID, force)
 			if err != nil {
 				return err
 			}
-			if err := config.SavePool(repoRoot, pool); err != nil {
+			if err := config.SavePool(repoRoot, updated); err != nil {
 				return err
 			}
-
-			if removed != nil {
-				fmt.Printf("Deleted workbench %s\n", removed.Name)
+			if message != "" {
+				fmt.Println(message)
 			}
 			return nil
 		},

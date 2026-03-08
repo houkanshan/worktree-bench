@@ -17,6 +17,9 @@
   - Defaults are inferred from lockfiles / `package.json` and can be edited.
 
 ## Runtime flow
+- **dashboard (no args)**
+  - Tabbed list with "+ new" plus workbenches.
+  - `enter` switches/creates, `d` deletes with confirm.
 - **create**
   - TUI lets you pick a type and reuse an existing bench or create a new one.
   - Runs `git worktree add`, optionally `gh pr checkout`.

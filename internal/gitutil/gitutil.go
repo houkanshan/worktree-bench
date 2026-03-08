@@ -16,6 +16,19 @@ func RepoRoot() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// MainWorktreeRoot returns the root of the main worktree for the repository.
+func MainWorktreeRoot(path string) (string, error) {
+	commonDir, err := GitCommonDir(path)
+	if err != nil {
+		return "", err
+	}
+	commonDir = filepath.Clean(commonDir)
+	if filepath.Base(commonDir) == ".git" {
+		return filepath.Dir(commonDir), nil
+	}
+	return path, nil
+}
+
 func Branch(path string) (string, error) {
 	out, err := exec.Command("git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {

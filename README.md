@@ -26,10 +26,20 @@ go build ./cmd/worktree-bench
 ```
 
 ## Usage
+### Default dashboard (no args)
+```bash
+./worktree-bench
+```
+Shortcuts:
+- `tab`: switch type tab
+- `enter`: create new ("+ new") or switch to selected workbench
+- `d`: delete selected workbench (confirm y/n)
+
 ### Create a workbench
 ```bash
 ./worktree-bench create
 ```
+If the current worktree is not registered, you'll be asked whether to adopt it or create a new worktree.
 
 ### View status
 ```bash
@@ -52,7 +62,7 @@ Option A: eval directly
 eval "$(./worktree-bench switch)"
 ```
 
-Option B: source the helper function
+Option B: source the helper function (opens the dashboard)
 ```bash
 source ./scripts/wtb.bash
 wtb

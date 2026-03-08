@@ -29,6 +29,7 @@ type createModel struct {
 	lists      map[string]list.Model
 	types      []string
 	tabIndex   int
+	lockType   bool
 	selected   *config.Workbench
 	nameInput  textinput.Model
 	refInput   textinput.Model
@@ -37,9 +38,13 @@ type createModel struct {
 }
 
 func RunCreate(benches []config.Workbench) (CreateResult, error) {
+	return RunCreateWithType(benches, "")
+}
+
+func RunCreateWithType(benches []config.Workbench, fixedType string) (CreateResult, error) {
 	statuses := LoadBenchStatuses(benches)
-	model := newCreateModel(benches, statuses)
-	prog := tea.NewProgram(model)
+	model := newCreateModel(benches, statuses, fixedType)
+	prog := tea.NewProgram(model, tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
 		return CreateResult{}, err
@@ -48,7 +53,7 @@ func RunCreate(benches []config.Workbench) (CreateResult, error) {
 	return m.result, nil
 }
 
-func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus) createModel {
+func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus, fixedType string) createModel {
 	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
 	lists := make(map[string]list.Model)
 
@@ -79,10 +84,26 @@ func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus)
 	refInput.CharLimit = 80
 	refInput.Focus()
 
+	tabIndex := 0
+	lockType := false
+	step := createStepSelect
+	if fixedType != "" {
+		for i, value := range types {
+			if value == fixedType {
+				tabIndex = i
+				lockType = true
+				step = createStepInput
+				break
+			}
+		}
+	}
+
 	return createModel{
-		step:       createStepSelect,
+		step:       step,
 		lists:      lists,
 		types:      types,
+		tabIndex:   tabIndex,
+		lockType:   lockType,
 		nameInput:  nameInput,
 		refInput:   refInput,
 		focusIndex: 1,
@@ -106,7 +127,7 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result.Cancelled = true
 			return m, tea.Quit
 		case "tab":
-			if m.step == createStepSelect {
+			if m.step == createStepSelect && !m.lockType {
 				m.tabIndex = (m.tabIndex + 1) % len(m.types)
 				return m, nil
 			}
@@ -182,8 +203,9 @@ func (m createModel) View() string {
 		if m.selected != nil {
 			nameLabel = "Workbench name (ignored for reuse):"
 		}
-		return fmt.Sprintf("%s\n\n%s\n%s\n\nCheckout (branch or PR #):\n%s\n\n(tab to switch input, enter to confirm)",
+		return fmt.Sprintf("%s\n\nType: %s\n\n%s\n%s\n\nCheckout (branch or PR #):\n%s\n\n(tab to switch input, enter to confirm)",
 			header,
+			m.types[m.tabIndex],
 			nameLabel,
 			m.nameInput.View(),
 			m.refInput.View(),

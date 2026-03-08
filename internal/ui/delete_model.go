@@ -31,7 +31,7 @@ type deleteModel struct {
 func RunDelete(benches []config.Workbench) (DeleteResult, error) {
 	statuses := LoadBenchStatuses(benches)
 	model := newDeleteModel(benches, statuses)
-	prog := tea.NewProgram(model)
+	prog := tea.NewProgram(model, tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
 		return DeleteResult{}, err

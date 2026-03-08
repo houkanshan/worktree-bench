@@ -332,3 +332,8 @@ func findBenchByPath(pool config.Pool, path string) *config.Workbench {
 	}
 	return nil
 }
+
+// FindWorkbenchByPath exposes lookup by path.
+func FindWorkbenchByPath(pool config.Pool, path string) *config.Workbench {
+	return findBenchByPath(pool, path)
+}

@@ -28,6 +28,7 @@ type adoptModel struct {
 	step        int
 	types       []string
 	tabIndex    int
+	lockType    bool
 	nameInput   textinput.Model
 	defaultName string
 	currentPath string
@@ -39,8 +40,12 @@ type adoptModel struct {
 }
 
 func RunAdopt(currentPath string, defaultName string, setupCmd string, devCmd string) (AdoptResult, error) {
-	model := newAdoptModel(currentPath, defaultName, setupCmd, devCmd)
-	prog := tea.NewProgram(model)
+	return RunAdoptWithType(currentPath, defaultName, setupCmd, devCmd, "")
+}
+
+func RunAdoptWithType(currentPath string, defaultName string, setupCmd string, devCmd string, fixedType string) (AdoptResult, error) {
+	model := newAdoptModel(currentPath, defaultName, setupCmd, devCmd, fixedType)
+	prog := tea.NewProgram(model, tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
 		return AdoptResult{}, err
@@ -49,16 +54,32 @@ func RunAdopt(currentPath string, defaultName string, setupCmd string, devCmd st
 	return m.result, nil
 }
 
-func newAdoptModel(currentPath string, defaultName string, setupCmd string, devCmd string) adoptModel {
+func newAdoptModel(currentPath string, defaultName string, setupCmd string, devCmd string, fixedType string) adoptModel {
 	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
 	nameInput := textinput.New()
 	nameInput.Placeholder = defaultName
 	nameInput.CharLimit = 64
 	nameInput.Focus()
 
+	tabIndex := 0
+	lockType := false
+	step := adoptStepSelect
+	if fixedType != "" {
+		for i, value := range types {
+			if value == fixedType {
+				tabIndex = i
+				lockType = true
+				step = adoptStepInput
+				break
+			}
+		}
+	}
+
 	return adoptModel{
-		step:        adoptStepSelect,
+		step:        step,
 		types:       types,
+		tabIndex:    tabIndex,
+		lockType:    lockType,
 		nameInput:   nameInput,
 		defaultName: defaultName,
 		currentPath: currentPath,
@@ -77,7 +98,7 @@ func (m adoptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result.Cancelled = true
 			return m, tea.Quit
 		case "tab":
-			if m.step == adoptStepSelect {
+			if m.step == adoptStepSelect && !m.lockType {
 				m.tabIndex = (m.tabIndex + 1) % len(m.types)
 				return m, nil
 			}
@@ -127,7 +148,7 @@ func (m adoptModel) View() string {
 	switch m.step {
 	case adoptStepInput:
 		header := renderHeader("Adopt current worktree")
-		body := fmt.Sprintf("Current: %s\n\nWorkbench name (default: %s):\n%s\n\n(enter to continue)", m.currentPath, m.defaultName, m.nameInput.View())
+		body := fmt.Sprintf("Current: %s\nType: %s\n\nWorkbench name (default: %s):\n%s\n\n(enter to continue)", m.currentPath, strings.ToUpper(m.types[m.tabIndex]), m.defaultName, m.nameInput.View())
 		return fmt.Sprintf("%s\n\n%s", header, body)
 	case adoptStepConfirm:
 		header := renderHeader("Confirm adoption")
@@ -176,14 +197,10 @@ func (m adoptModel) devEligible() bool {
 }
 
 func (m *adoptModel) ensureEligibility() {
-	if m.setupEligible() {
-		m.runSetup = true
-	} else {
+	if !m.setupEligible() {
 		m.runSetup = false
 	}
-	if m.devEligible() {
-		m.runDev = false
-	} else {
+	if !m.devEligible() {
 		m.runDev = false
 	}
 }

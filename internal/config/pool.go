@@ -1,16 +1,19 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"worktree-bench/internal/gitutil"
 )
 
 const (
-	PoolFileName    = "pool.json"
+	PoolFileName     = "pool.json"
 	SettingsFileName = "config.json"
 )
 
@@ -50,10 +53,14 @@ type Settings struct {
 }
 
 func LoadSettings(repoRoot string) (Settings, error) {
-	settingsPath := filepath.Join(repoRoot, ".worktree-bench", SettingsFileName)
+	configDir, defaultsRoot, err := resolveConfigDir(repoRoot)
+	if err != nil {
+		return Settings{}, err
+	}
+	settingsPath := filepath.Join(configDir, SettingsFileName)
 	if _, err := os.Stat(settingsPath); errors.Is(err, os.ErrNotExist) {
-		defaults := Settings{WorktreesDir: filepath.Join(repoRoot, "..", ".worktrees")}
-		if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		defaults := Settings{WorktreesDir: defaultWorktreesDir(defaultsRoot)}
+		if err := os.MkdirAll(configDir, 0o755); err != nil {
 			return Settings{}, err
 		}
 		if err := writeJSON(settingsPath, defaults); err != nil {
@@ -68,25 +75,33 @@ func LoadSettings(repoRoot string) (Settings, error) {
 	}
 
 	if settings.WorktreesDir == "" {
-		settings.WorktreesDir = filepath.Join(repoRoot, "..", ".worktrees")
+		settings.WorktreesDir = defaultWorktreesDir(defaultsRoot)
 	}
 
 	return settings, nil
 }
 
 func SaveSettings(repoRoot string, settings Settings) error {
-	settingsPath := filepath.Join(repoRoot, ".worktree-bench", SettingsFileName)
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	configDir, _, err := resolveConfigDir(repoRoot)
+	if err != nil {
+		return err
+	}
+	settingsPath := filepath.Join(configDir, SettingsFileName)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
 	return writeJSON(settingsPath, settings)
 }
 
 func LoadPool(repoRoot string, settings Settings) (Pool, error) {
-	poolPath := filepath.Join(repoRoot, ".worktree-bench", PoolFileName)
+	configDir, defaultsRoot, err := resolveConfigDir(repoRoot)
+	if err != nil {
+		return Pool{}, err
+	}
+	poolPath := filepath.Join(configDir, PoolFileName)
 	if _, err := os.Stat(poolPath); errors.Is(err, os.ErrNotExist) {
-		pool := Pool{Version: 1, RepoRoot: repoRoot, WorktreesDir: settings.WorktreesDir, Benches: []Workbench{}}
-		if err := os.MkdirAll(filepath.Dir(poolPath), 0o755); err != nil {
+		pool := Pool{Version: 1, RepoRoot: defaultsRoot, WorktreesDir: settings.WorktreesDir, Benches: []Workbench{}}
+		if err := os.MkdirAll(configDir, 0o755); err != nil {
 			return Pool{}, err
 		}
 		if err := writeJSON(poolPath, pool); err != nil {
@@ -103,17 +118,61 @@ func LoadPool(repoRoot string, settings Settings) (Pool, error) {
 	if pool.WorktreesDir == "" {
 		pool.WorktreesDir = settings.WorktreesDir
 	}
+	if pool.RepoRoot == "" {
+		pool.RepoRoot = defaultsRoot
+	}
 
 	return pool, nil
 }
 
 func SavePool(repoRoot string, pool Pool) error {
-	poolPath := filepath.Join(repoRoot, ".worktree-bench", PoolFileName)
-	if err := os.MkdirAll(filepath.Dir(poolPath), 0o755); err != nil {
+	configDir, defaultsRoot, err := resolveConfigDir(repoRoot)
+	if err != nil {
 		return err
 	}
-	pool.RepoRoot = repoRoot
+	poolPath := filepath.Join(configDir, PoolFileName)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return err
+	}
+	pool.RepoRoot = defaultsRoot
 	return writeJSON(poolPath, pool)
+}
+
+func resolveConfigDir(repoRoot string) (string, string, error) {
+	mainRoot, err := gitutil.MainWorktreeRoot(repoRoot)
+	if err == nil && mainRoot != "" {
+		if _, statErr := os.Stat(mainRoot); statErr == nil {
+			return filepath.Join(mainRoot, ".worktree-bench"), mainRoot, nil
+		}
+	}
+	globalDir, globalErr := globalConfigDir(repoRoot)
+	if globalErr != nil {
+		if err != nil {
+			return "", "", err
+		}
+		return "", "", globalErr
+	}
+	return globalDir, repoRoot, nil
+}
+
+func defaultWorktreesDir(repoRoot string) string {
+	return filepath.Join(repoRoot, "..", ".worktrees")
+}
+
+func globalConfigDir(repoRoot string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	key := repoKey(repoRoot)
+	return filepath.Join(home, ".worktree-bench", "repos", key), nil
+}
+
+func repoKey(repoRoot string) string {
+	clean := filepath.Clean(repoRoot)
+	sum := sha256.Sum256([]byte(clean))
+	base := filepath.Base(clean)
+	return fmt.Sprintf("%s-%x", base, sum[:8])
 }
 
 func NewWorkbenchID() string {

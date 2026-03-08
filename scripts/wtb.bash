@@ -7,7 +7,7 @@ wtb() {
   directive_file="$(mktemp)"
 
   # Ensure worktree-bench is in PATH.
-  WTB_DIRECTIVE_FILE="$directive_file" worktree-bench switch "$@"
+  WTB_DIRECTIVE_FILE="$directive_file" worktree-bench "$@"
   exit_code=$?
 
   if [ -s "$directive_file" ]; then

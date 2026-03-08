@@ -11,6 +11,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "worktree-bench",
 		Short: "Manage a pool of git worktree workbenches",
+		RunE:  runDashboard,
 	}
 
 	rootCmd.AddCommand(newCreateCommand())

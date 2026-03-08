@@ -13,8 +13,6 @@ import (
 	"worktree-bench/internal/ui"
 )
 
-const directiveEnv = "WTB_DIRECTIVE_FILE"
-
 func newSwitchCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "switch",
@@ -51,20 +49,7 @@ func newSwitchCommand() *cobra.Command {
 				return err
 			}
 
-			directiveFile, _ := cmd.Flags().GetString("directive-file")
-			if directiveFile == "" {
-				directiveFile = os.Getenv(directiveEnv)
-			}
-
-			if directiveFile != "" {
-				if err := appendDirective(directiveFile, targetPath); err != nil {
-					return err
-				}
-				return nil
-			}
-
-			fmt.Printf("cd '%s'\n", targetPath)
-			return nil
+			return emitDirective(cmd, targetPath)
 		},
 	}
 

@@ -3,7 +3,7 @@ function wtb
     set -l args $argv
     set -l directive_file (mktemp)
 
-    env WTB_DIRECTIVE_FILE=$directive_file worktree-bench switch $args
+    env WTB_DIRECTIVE_FILE=$directive_file worktree-bench $args
     set -l exit_code $status
 
     if test -s "$directive_file"

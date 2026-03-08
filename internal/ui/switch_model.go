@@ -33,7 +33,7 @@ type switchModel struct {
 func RunSwitch(benches []config.Workbench) (SwitchResult, error) {
 	statuses := LoadBenchStatuses(benches)
 	model := newSwitchModel(benches, statuses)
-	prog := tea.NewProgram(model)
+	prog := tea.NewProgram(model, tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
 		return SwitchResult{}, err
