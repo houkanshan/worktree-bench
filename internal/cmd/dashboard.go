@@ -47,13 +47,16 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 		if flow.message != "" {
 			fmt.Fprintln(os.Stdout, flow.message)
 		}
+		if flow.targetPath != "" {
+			return emitDirective(cmd, flow.targetPath)
+		}
 		return nil
 	case ui.DashboardActionSwitch:
 		selected := findBenchByID(pool, result.BenchID)
 		if selected == nil {
 			return fmt.Errorf("workbench not found")
 		}
-		targetPath, err := bench.Switch(repoRoot, selected.Path, false)
+		targetPath, err := bench.Switch(repoRoot, selected.Path, true)
 		if err != nil {
 			return err
 		}

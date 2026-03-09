@@ -11,7 +11,7 @@ import (
 )
 
 func newCreateCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create or reuse a workbench",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,7 +40,13 @@ func newCreateCommand() *cobra.Command {
 			if flow.message != "" {
 				fmt.Fprintln(os.Stdout, flow.message)
 			}
+			if flow.targetPath != "" {
+				return emitDirective(cmd, flow.targetPath)
+			}
 			return nil
 		},
 	}
+
+	cmd.Flags().String("directive-file", "", "write cd directives to a file (for shell wrappers)")
+	return cmd
 }

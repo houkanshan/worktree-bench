@@ -12,9 +12,10 @@ import (
 )
 
 type createFlowResult struct {
-	pool    config.Pool
-	changed bool
-	message string
+	pool       config.Pool
+	changed    bool
+	message    string
+	targetPath string
 }
 
 func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) (createFlowResult, error) {
@@ -80,10 +81,12 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 	}
 	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
+	targetPath := ""
 	if created != nil {
 		message = fmt.Sprintf("Created workbench %s at %s", created.Name, created.Path)
+		targetPath = created.Path
 	}
-	return createFlowResult{pool: updated, changed: created != nil, message: message}, err
+	return createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}, err
 }
 
 func runCreateFromDashboard(repoRoot string, settings config.Settings, pool config.Pool, benchType string) (createFlowResult, error) {
@@ -139,10 +142,12 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 	}
 	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
+	targetPath := ""
 	if created != nil {
 		message = fmt.Sprintf("Created workbench %s at %s", created.Name, created.Path)
+		targetPath = created.Path
 	}
-	return createFlowResult{pool: updated, changed: created != nil, message: message}, err
+	return createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}, err
 }
 
 func runDeleteFlow(repoRoot string, pool config.Pool, benchID string, force bool) (config.Pool, string, error) {

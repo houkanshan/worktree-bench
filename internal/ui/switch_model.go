@@ -138,7 +138,7 @@ func (m switchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m switchModel) View() string {
 	if m.step == switchStepConfirm {
 		header := renderHeader("Switch workbench")
-		body := "Swap files with current worktree? (y/n, enter to confirm)"
+		body := "Swap branches with current worktree? (y/n, enter to confirm)"
 		selection := "no"
 		if m.swap {
 			selection = "yes"

@@ -16,6 +16,8 @@ import (
 
 var prPattern = regexp.MustCompile(`^(#|pr:)?(\d+)$`)
 
+const tempCommitMessage = "__WTSWAP_TEMP__"
+
 func DetectSetupCmd(repoRoot string) string {
 	if fileExists(filepath.Join(repoRoot, "pnpm-lock.yaml")) {
 		return "pnpm install"
@@ -222,18 +224,136 @@ func Switch(repoRoot string, targetPath string, swap bool) (string, error) {
 	if filepath.Clean(currentRoot) == filepath.Clean(targetPath) {
 		return currentRoot, nil
 	}
-	parent := filepath.Dir(targetPath)
-	tmpPath := filepath.Join(parent, fmt.Sprintf(".swap-%d", os.Getpid()))
-	if err := gitutil.WorktreeMove(repoRoot, targetPath, tmpPath); err != nil {
+	if err := swapBranches(currentRoot, targetPath); err != nil {
 		return "", err
 	}
-	if err := gitutil.WorktreeMove(repoRoot, currentRoot, targetPath); err != nil {
+	return targetPath, nil
+}
+
+func swapBranches(currentPath, targetPath string) error {
+	currentBranch, err := branchOrError(currentPath, "current")
+	if err != nil {
+		return err
+	}
+	targetBranch, err := branchOrError(targetPath, "target")
+	if err != nil {
+		return err
+	}
+
+	currentHadChanges, err := createTempCommit(currentPath)
+	if err != nil {
+		return err
+	}
+	targetHadChanges, err := createTempCommit(targetPath)
+	if err != nil {
+		if currentHadChanges {
+			_ = resetTempCommit(currentPath)
+		}
+		return err
+	}
+
+	rollback := func() {
+		_ = checkoutDetach(targetPath)
+		_ = checkoutBranch(currentPath, currentBranch)
+		_ = checkoutBranch(targetPath, targetBranch)
+		_ = resetTempCommit(currentPath)
+		_ = resetTempCommit(targetPath)
+	}
+
+	if err := checkoutDetach(targetPath); err != nil {
+		rollback()
+		return err
+	}
+	if err := checkoutBranch(currentPath, targetBranch); err != nil {
+		rollback()
+		return err
+	}
+	if err := checkoutBranch(targetPath, currentBranch); err != nil {
+		rollback()
+		return err
+	}
+
+	if currentHadChanges {
+		if err := resetTempCommit(targetPath); err != nil {
+			return err
+		}
+	}
+	if targetHadChanges {
+		if err := resetTempCommit(currentPath); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func branchOrError(path, label string) (string, error) {
+	branch, err := gitutil.Branch(path)
+	if err != nil {
 		return "", err
 	}
-	if err := gitutil.WorktreeMove(repoRoot, tmpPath, currentRoot); err != nil {
-		return "", err
+	if branch == "HEAD" {
+		return "", fmt.Errorf("%s worktree is in detached HEAD state", label)
 	}
-	return currentRoot, nil
+	return branch, nil
+}
+
+func hasChanges(path string) (bool, error) {
+	out, err := exec.Command("git", "-C", path, "status", "--porcelain").Output()
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) != "", nil
+}
+
+func createTempCommit(path string) (bool, error) {
+	changed, err := hasChanges(path)
+	if err != nil || !changed {
+		return false, err
+	}
+	if err := runGit(path, "add", "-A"); err != nil {
+		return false, err
+	}
+	if err := runGit(path, "commit", "-m", tempCommitMessage, "--no-verify"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func resetTempCommit(path string) error {
+	isTemp, err := isTempCommit(path)
+	if err != nil || !isTemp {
+		return err
+	}
+	if err := runGit(path, "reset", "--soft", "HEAD~1"); err != nil {
+		return err
+	}
+	return runGit(path, "reset", "HEAD")
+}
+
+func isTempCommit(path string) (bool, error) {
+	out, err := exec.Command("git", "-C", path, "log", "-1", "--format=%s").Output()
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == tempCommitMessage, nil
+}
+
+func checkoutDetach(path string) error {
+	return runGit(path, "checkout", "--detach")
+}
+
+func checkoutBranch(path, branch string) error {
+	return runGit(path, "checkout", branch)
+}
+
+func runGit(path string, args ...string) error {
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %s failed: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // CreateInput describes a create action.
