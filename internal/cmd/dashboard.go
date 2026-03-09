@@ -75,7 +75,10 @@ func runDashboardWithOptions(cmd *cobra.Command, opts dashboardOptions) error {
 		if selected == nil {
 			return fmt.Errorf("workbench not found")
 		}
-		targetPath, err := bench.Switch(repoRoot, selected.Path, opts.swapOnSelect)
+		if !opts.swapOnSelect {
+			return emitDirective(cmd, selected.Path)
+		}
+		targetPath, err := bench.Switch(repoRoot, selected.Path, true)
 		if err != nil {
 			return err
 		}

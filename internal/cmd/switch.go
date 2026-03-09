@@ -44,7 +44,11 @@ func newSwitchCommand() *cobra.Command {
 				return errors.New("workbench not found")
 			}
 
-			targetPath, err := bench.Switch(repoRoot, selected.Path, result.Swap)
+			if !result.Swap {
+				return emitDirective(cmd, selected.Path)
+			}
+
+			targetPath, err := bench.Switch(repoRoot, selected.Path, true)
 			if err != nil {
 				return err
 			}
