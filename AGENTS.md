@@ -7,6 +7,8 @@
 - Prefer small, focused packages under `internal/`.
 - Use `config.Settings` + `config.Pool` for persistence.
 - Keep shelling out to `git`/`gh` inside `internal/gitutil` and `internal/bench`.
+- Always wrap external command errors with context: include the command name and stderr output. Use `CombinedOutput()` + `fmt.Errorf` instead of bare `cmd.Run()`.
+- Always run `go build ./cmd/worktree-bench` after making changes.
 
 ## UI behavior
 - Tabs switch workbench types with `tab`.

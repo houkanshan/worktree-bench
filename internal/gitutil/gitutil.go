@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func RepoRoot() (string, error) {
@@ -98,47 +99,61 @@ func atoi(value string) int {
 }
 
 func Fetch(path string) error {
-	cmd := exec.Command("git", "-C", path, "fetch", "--all", "--prune")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return cmd.Run()
+	return runGit(path, "fetch", "--all", "--prune")
 }
 
 func CheckoutBranch(path, branch string) error {
-	cmd := exec.Command("git", "-C", path, "checkout", branch)
-	if err := cmd.Run(); err == nil {
+	if err := runGit(path, "checkout", branch); err == nil {
 		return nil
 	}
-	cmd = exec.Command("git", "-C", path, "checkout", "-b", branch, "origin/"+branch)
-	if err := cmd.Run(); err == nil {
+	if err := runGit(path, "checkout", "-b", branch, "origin/"+branch); err == nil {
 		return nil
 	}
-	cmd = exec.Command("git", "-C", path, "checkout", "-b", branch)
-	return cmd.Run()
+	return runGit(path, "checkout", "-b", branch)
 }
 
 func WorktreeAdd(repoRoot, path, branch string) error {
-	args := []string{"-C", repoRoot, "worktree", "add", path}
+	args := []string{"worktree", "add", path}
 	if branch != "" {
 		args = append(args, branch)
 	}
-	cmd := exec.Command("git", args...)
-	return cmd.Run()
+	return runGit(repoRoot, args...)
 }
 
 func WorktreeMove(repoRoot, oldPath, newPath string) error {
-	cmd := exec.Command("git", "-C", repoRoot, "worktree", "move", oldPath, newPath)
-	return cmd.Run()
+	return runGit(repoRoot, "worktree", "move", oldPath, newPath)
 }
 
 func WorktreeRemove(repoRoot, path string, force bool) error {
-	args := []string{"-C", repoRoot, "worktree", "remove"}
+	args := []string{"worktree", "remove"}
 	if force {
 		args = append(args, "--force")
 	}
 	args = append(args, path)
-	cmd := exec.Command("git", args...)
-	return cmd.Run()
+	return runGit(repoRoot, args...)
+}
+
+// LastCommitTime returns the author date of the most recent commit in the repo at path.
+func LastCommitTime(path string) (time.Time, error) {
+	out, err := exec.Command("git", "-C", path, "log", "-1", "--format=%aI").Output()
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
+}
+
+// runGit executes a git command with -C path, capturing stderr for error context.
+func runGit(path string, args ...string) error {
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return fmt.Errorf("git %s: %s", strings.Join(args, " "), detail)
+		}
+		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return nil
 }
 
 func DiffLines(path string) (int, error) {

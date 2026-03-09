@@ -153,17 +153,29 @@ func checkoutRef(path, ref string) error {
 func ghCheckoutPR(path string, number int) error {
 	cmd := exec.Command("gh", "pr", "checkout", fmt.Sprintf("%d", number))
 	cmd.Dir = path
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return fmt.Errorf("gh pr checkout %d: %s", number, detail)
+		}
+		return fmt.Errorf("gh pr checkout %d: %w", number, err)
+	}
+	return nil
 }
 
 func runCommand(dir, command string) error {
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return fmt.Errorf("%s: %s", command, detail)
+		}
+		return fmt.Errorf("%s: %w", command, err)
+	}
+	return nil
 }
 
 func startCommand(dir, command string) (int, error) {
