@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 )
 
 type BenchStatus struct {
+	DirMissing   bool
 	Branch       string
 	LastCommit   time.Time
 	ChangesLines int
@@ -31,6 +33,14 @@ func LoadBenchStatuses(benches []config.Workbench) map[string]BenchStatus {
 	statuses := make(map[string]BenchStatus, len(benches))
 	for _, bench := range benches {
 		status := BenchStatus{}
+
+		// Check if the worktree directory still exists on disk.
+		if _, err := os.Stat(bench.Path); os.IsNotExist(err) {
+			status.DirMissing = true
+			statuses[bench.ID] = status
+			continue
+		}
+
 		branch, err := gitutil.Branch(bench.Path)
 		if err == nil {
 			status.Branch = branch
@@ -105,6 +115,9 @@ func relativeTime(t time.Time) string {
 }
 
 func FormatStatusLine(status BenchStatus) string {
+	if status.DirMissing {
+		return "⚠ directory missing"
+	}
 	parts := []string{}
 	if status.Branch != "" {
 		parts = append(parts, fmt.Sprintf("branch: %s", status.Branch))

@@ -101,7 +101,8 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if err := os.MkdirAll(settings.WorktreesDir, 0o755); err != nil {
 		return pool, nil, err
 	}
-	if err := gitutil.WorktreeAdd(repoRoot, benchPath, ""); err != nil {
+	branchName := config.NewBranchName(settings.BranchPrefix)
+	if err := gitutil.WorktreeAdd(repoRoot, benchPath, branchName); err != nil {
 		return pool, nil, err
 	}
 	if err := checkoutRef(benchPath, input.Ref); err != nil {
@@ -313,7 +314,7 @@ func branchOrError(path, label string) (string, error) {
 func hasChanges(path string) (bool, error) {
 	out, err := exec.Command("git", "-C", path, "status", "--porcelain").Output()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("git status: %w", err)
 	}
 	return strings.TrimSpace(string(out)) != "", nil
 }
@@ -346,7 +347,7 @@ func resetTempCommit(path string) error {
 func isTempCommit(path string) (bool, error) {
 	out, err := exec.Command("git", "-C", path, "log", "-1", "--format=%s").Output()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("git log: %w", err)
 	}
 	return strings.TrimSpace(string(out)) == tempCommitMessage, nil
 }

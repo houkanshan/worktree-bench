@@ -1,7 +1,9 @@
 package config
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,8 @@ import (
 
 	"worktree-bench/internal/gitutil"
 )
+
+const DefaultBranchPrefix = "bench/"
 
 const (
 	PoolFileName     = "pool.json"
@@ -50,6 +54,7 @@ type Settings struct {
 	WorktreesDir string `json:"worktrees_dir"`
 	SetupCmd     string `json:"setup_cmd"`
 	DevCmd       string `json:"dev_cmd"`
+	BranchPrefix string `json:"branch_prefix"`
 }
 
 func LoadSettings(repoRoot string) (Settings, error) {
@@ -177,6 +182,21 @@ func repoKey(repoRoot string) string {
 
 func NewWorkbenchID() string {
 	return fmt.Sprintf("wb-%d", time.Now().UnixNano())
+}
+
+// NewBranchName generates a branch name as "{prefix}{4-digit-hex}".
+// If prefix is empty, DefaultBranchPrefix is used.
+func NewBranchName(prefix string) string {
+	if prefix == "" {
+		prefix = DefaultBranchPrefix
+	}
+	b := make([]byte, 2)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based hex if crypto/rand fails.
+		b[0] = byte(time.Now().UnixNano() >> 8)
+		b[1] = byte(time.Now().UnixNano())
+	}
+	return prefix + hex.EncodeToString(b)
 }
 
 func NowString() string {

@@ -2,6 +2,7 @@ package gitutil
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func MainWorktreeRoot(path string) (string, error) {
 func Branch(path string) (string, error) {
 	out, err := exec.Command("git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
-		return "", err
+		return "", gitOutputError("rev-parse --abbrev-ref HEAD", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -50,7 +51,7 @@ func Branch(path string) (string, error) {
 func GitCommonDir(path string) (string, error) {
 	out, err := exec.Command("git", "-C", path, "rev-parse", "--git-common-dir").Output()
 	if err != nil {
-		return "", err
+		return "", gitOutputError("rev-parse --git-common-dir", err)
 	}
 	common := strings.TrimSpace(string(out))
 	if filepath.IsAbs(common) {
@@ -66,7 +67,7 @@ func StatusNumstat(path string, staged bool) (int, int, error) {
 	}
 	out, err := exec.Command("git", args...).Output()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, gitOutputError(strings.Join(args[2:], " "), err)
 	}
 	added, deleted := parseNumstat(out)
 	return added, deleted, nil
@@ -113,10 +114,11 @@ func CheckoutBranch(path, branch string) error {
 }
 
 func WorktreeAdd(repoRoot, path, branch string) error {
-	args := []string{"worktree", "add", path}
+	args := []string{"worktree", "add"}
 	if branch != "" {
-		args = append(args, branch)
+		args = append(args, "-b", branch)
 	}
+	args = append(args, path)
 	return runGit(repoRoot, args...)
 }
 
@@ -137,9 +139,22 @@ func WorktreeRemove(repoRoot, path string, force bool) error {
 func LastCommitTime(path string) (time.Time, error) {
 	out, err := exec.Command("git", "-C", path, "log", "-1", "--format=%aI").Output()
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, gitOutputError("log", err)
 	}
 	return time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
+}
+
+// gitOutputError wraps an error from exec.Command().Output() with the git
+// subcommand name and any stderr the process produced.
+func gitOutputError(subcmd string, err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		detail := strings.TrimSpace(string(exitErr.Stderr))
+		if detail != "" {
+			return fmt.Errorf("git %s: %s", subcmd, detail)
+		}
+	}
+	return fmt.Errorf("git %s: %w", subcmd, err)
 }
 
 // runGit executes a git command with -C path, capturing stderr for error context.
