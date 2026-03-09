@@ -1,5 +1,5 @@
 function wtb
-    # Wrapper for worktree-bench switch (keep behavior/comments in sync with scripts/wtb.bash).
+    # Wrapper for worktree-bench (keep behavior/comments in sync with scripts/wtb.bash).
     set -l args $argv
     set -l directive_file (mktemp)
 

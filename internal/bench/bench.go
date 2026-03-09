@@ -79,6 +79,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if input.Type == "" {
 		return pool, nil, errors.New("missing workbench type")
 	}
+	baseBranch := strings.TrimSpace(input.BaseBranch)
+	if baseBranch == "" {
+		return pool, nil, errors.New("missing base branch")
+	}
+	branchName := config.NewBranchName(settings.BranchPrefix)
 
 	if input.UseExisting {
 		bench := findBench(pool, input.BenchID)
@@ -88,7 +93,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		if err := gitutil.Fetch(bench.Path); err != nil {
 			return pool, nil, err
 		}
-		if err := checkoutRef(bench.Path, input.Ref); err != nil {
+		if err := gitutil.CheckoutNewBranch(bench.Path, branchName, baseBranch); err != nil {
 			return pool, nil, err
 		}
 		return pool, bench, nil
@@ -101,11 +106,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if err := os.MkdirAll(settings.WorktreesDir, 0o755); err != nil {
 		return pool, nil, err
 	}
-	branchName := config.NewBranchName(settings.BranchPrefix)
-	if err := gitutil.WorktreeAdd(repoRoot, benchPath, branchName); err != nil {
-		return pool, nil, err
-	}
-	if err := checkoutRef(benchPath, input.Ref); err != nil {
+	if err := gitutil.WorktreeAdd(repoRoot, benchPath, branchName, baseBranch); err != nil {
 		return pool, nil, err
 	}
 
@@ -375,7 +376,7 @@ type CreateInput struct {
 	UseExisting bool
 	BenchID     string
 	Name        string
-	Ref         string
+	BaseBranch  string
 }
 
 // AdoptInput describes adopting the current worktree into the pool.

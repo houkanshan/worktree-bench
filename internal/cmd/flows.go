@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"worktree-bench/internal/bench"
 	"worktree-bench/internal/config"
+	"worktree-bench/internal/gitutil"
 	"worktree-bench/internal/ui"
 )
 
@@ -28,11 +30,15 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 	}
 
 	if result.UseExisting {
+		baseBranch, err := resolveBaseBranch(repoRoot, result.BaseBranch)
+		if err != nil {
+			return createFlowResult{}, err
+		}
 		input := bench.CreateInput{
 			Type:        result.Type,
 			UseExisting: true,
 			BenchID:     result.BenchID,
-			Ref:         result.Ref,
+			BaseBranch:  baseBranch,
 		}
 		updated, _, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 		return createFlowResult{pool: updated}, err
@@ -73,11 +79,15 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 		}
 	}
 
+	baseBranch, err := resolveBaseBranch(repoRoot, result.BaseBranch)
+	if err != nil {
+		return createFlowResult{}, err
+	}
 	input := bench.CreateInput{
 		Type:        result.Type,
 		UseExisting: false,
 		Name:        result.Name,
-		Ref:         result.Ref,
+		BaseBranch:  baseBranch,
 	}
 	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
@@ -134,11 +144,15 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 		return createFlowResult{pool: pool}, nil
 	}
 
+	baseBranch, err := resolveBaseBranch(repoRoot, result.BaseBranch)
+	if err != nil {
+		return createFlowResult{}, err
+	}
 	input := bench.CreateInput{
 		Type:        benchType,
 		UseExisting: false,
 		Name:        result.Name,
-		Ref:         result.Ref,
+		BaseBranch:  baseBranch,
 	}
 	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
@@ -178,3 +192,26 @@ func emitDirective(cmd *cobra.Command, targetPath string) error {
 	fmt.Printf("cd '%s'\n", targetPath)
 	return nil
 }
+
+func resolveBaseBranch(repoRoot string, selection string) (string, error) {
+	value := strings.TrimSpace(selection)
+	if value == "" {
+		value = baseBranchMaster
+	}
+	if value == baseBranchCurrent {
+		branch, err := gitutil.Branch(repoRoot)
+		if err != nil {
+			return "", err
+		}
+		if branch == "HEAD" {
+			return "", fmt.Errorf("current worktree is in detached HEAD state")
+		}
+		return branch, nil
+	}
+	return value, nil
+}
+
+const (
+	baseBranchMaster  = "master"
+	baseBranchCurrent = "current"
+)

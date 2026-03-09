@@ -113,13 +113,44 @@ func CheckoutBranch(path, branch string) error {
 	return runGit(path, "checkout", "-b", branch)
 }
 
-func WorktreeAdd(repoRoot, path, branch string) error {
-	args := []string{"worktree", "add"}
-	if branch != "" {
-		args = append(args, "-b", branch)
+func CheckoutNewBranch(path, branch, base string) error {
+	if base == "" {
+		return runGit(path, "checkout", "-b", branch)
 	}
-	args = append(args, path)
-	return runGit(repoRoot, args...)
+	if err := runGit(path, "checkout", "-b", branch, base); err == nil {
+		return nil
+	} else if strings.HasPrefix(base, "origin/") {
+		return err
+	}
+	if err := runGit(path, "checkout", "-b", branch, "origin/"+base); err == nil {
+		return nil
+	} else {
+		return err
+	}
+}
+
+func WorktreeAdd(repoRoot, path, branch, base string) error {
+	attempt := func(baseRef string) error {
+		args := []string{"worktree", "add"}
+		if branch != "" {
+			args = append(args, "-b", branch)
+		}
+		args = append(args, path)
+		if baseRef != "" {
+			args = append(args, baseRef)
+		}
+		return runGit(repoRoot, args...)
+	}
+	if err := attempt(base); err == nil {
+		return nil
+	} else if base == "" || strings.HasPrefix(base, "origin/") {
+		return err
+	}
+	if err := attempt("origin/" + base); err == nil {
+		return nil
+	} else {
+		return err
+	}
 }
 
 func WorktreeMove(repoRoot, oldPath, newPath string) error {

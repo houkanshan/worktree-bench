@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Usage: source this file, then call `wtb` to switch workbenches.
+# Usage: source this file, then call `wtb` to open or swap workbenches.
 # Works for bash/zsh.
 
 wtb() {

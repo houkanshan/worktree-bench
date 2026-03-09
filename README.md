@@ -7,20 +7,20 @@ A Bubble Tea TUI for managing a pool of git worktree workbenches.
   - **full**: setup + dev server
   - **light**: setup only
   - **minimal**: plain worktree
-- **TUI create / switch / status / adopt / delete** with tabbed workbench types
+- **TUI create / swap / status / adopt / delete** with tabbed workbench types
 - **Status line** shows branch, PR (via `gh`), and uncommitted line counts
-- **Shell directives** for `cd` so switching updates your shell session
+- **Shell directives** for `cd` so changing workbenches updates your shell session
 
 ## How it works (ASCII diagram)
 ```
 Developer workflow
 ──────────────────
 
-┌───────────────┐   create / adopt / switch   ┌────────────────────────┐
+┌───────────────┐   create / adopt / swap     ┌────────────────────────┐
 │ developer     │ ──────────────────────────> │ worktree-bench (TUI)   │
 │ (current cwd) │                              └────────────┬──────────┘
 └───────────────┘                                           │
-                                                           │ switch anytime if scope grows
+                                                           │ swap anytime if scope grows
                                                            ▼
                      workbenches (more minimal > light > full)
 
@@ -87,7 +87,7 @@ cp ./scripts/wtb.fish ~/.config/fish/functions/wtb.fish
 ```
 Shortcuts:
 - `tab`: switch type tab
-- `enter`: create new ("+ new") or switch to selected workbench
+- `enter`: create new ("+ new") or cd to selected workbench
 - `d`: delete selected workbench (confirm y/n)
 
 ### Create a workbench
@@ -111,28 +111,28 @@ If the current worktree is not registered, you'll be asked whether to adopt it o
 ./worktree-bench delete
 ```
 
-### Switch workbench (bash/zsh)
+### Swap workbench (bash/zsh)
 Option A: eval directly
 ```bash
-eval "$(./worktree-bench switch)"
+eval "$(./worktree-bench swap)"
 ```
 
 Option B: source the helper function (opens the dashboard)
 ```bash
 source ./scripts/wtb.bash
-wtb
+wtb swap
 ```
-If you followed the shell setup above, you can just run `wtb`.
+If you followed the shell setup above, you can just run `wtb swap`.
 
-### Switch workbench (fish)
+### Swap workbench (fish)
 ```fish
 source ./scripts/wtb.fish
-wtb
+wtb swap
 ```
-If you followed the shell setup above, you can just run `wtb`.
+If you followed the shell setup above, you can just run `wtb swap`.
 
 ## Shell directives
-`worktree-bench switch` writes `cd 'path'` to a directive file (env `WTB_DIRECTIVE_FILE`) or prints to stdout. The provided wrapper functions consume that output and `eval` it in your shell so the working directory changes in the current session.
+`worktree-bench` (and `worktree-bench swap`) writes `cd 'path'` to a directive file (env `WTB_DIRECTIVE_FILE`) or prints to stdout. The provided wrapper functions consume that output and `eval` it in your shell so the working directory changes in the current session.
 
 ## Configuration
 Settings and pool data are stored in the repo root under `.worktree-bench/`:

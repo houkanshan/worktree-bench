@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -15,26 +16,37 @@ const (
 	createStepDone
 )
 
+const (
+	baseBranchMaster  = "master"
+	baseBranchCurrent = "current"
+)
+
+type baseBranchOption struct {
+	label string
+	value string
+}
+
 type CreateResult struct {
 	Type        string
 	UseExisting bool
 	BenchID     string
 	Name        string
-	Ref         string
+	BaseBranch  string
 	Cancelled   bool
 }
 
 type createModel struct {
-	step       int
-	lists      map[string]list.Model
-	types      []string
-	tabIndex   int
-	lockType   bool
-	selected   *config.Workbench
-	nameInput  textinput.Model
-	refInput   textinput.Model
-	focusIndex int
-	result     CreateResult
+	step        int
+	lists       map[string]list.Model
+	types       []string
+	tabIndex    int
+	lockType    bool
+	selected    *config.Workbench
+	nameInput   textinput.Model
+	baseOptions []baseBranchOption
+	baseIndex   int
+	focusIndex  int
+	result      CreateResult
 }
 
 func RunCreate(benches []config.Workbench) (CreateResult, error) {
@@ -78,11 +90,13 @@ func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus,
 	nameInput := textinput.New()
 	nameInput.Placeholder = "auto"
 	nameInput.CharLimit = 64
+	nameInput.Blur()
 
-	refInput := textinput.New()
-	refInput.Placeholder = "branch name or PR #"
-	refInput.CharLimit = 80
-	refInput.Focus()
+	baseOptions := []baseBranchOption{
+		{label: "master", value: baseBranchMaster},
+		{label: "current branch", value: baseBranchCurrent},
+	}
+	baseIndex := 0
 
 	tabIndex := 0
 	lockType := false
@@ -99,14 +113,15 @@ func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus,
 	}
 
 	return createModel{
-		step:       step,
-		lists:      lists,
-		types:      types,
-		tabIndex:   tabIndex,
-		lockType:   lockType,
-		nameInput:  nameInput,
-		refInput:   refInput,
-		focusIndex: 1,
+		step:        step,
+		lists:       lists,
+		types:       types,
+		tabIndex:    tabIndex,
+		lockType:    lockType,
+		nameInput:   nameInput,
+		baseOptions: baseOptions,
+		baseIndex:   baseIndex,
+		focusIndex:  1,
 	}
 }
 
@@ -135,9 +150,7 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex = (m.focusIndex + 1) % 2
 				if m.focusIndex == 0 {
 					m.nameInput.Focus()
-					m.refInput.Blur()
 				} else {
-					m.refInput.Focus()
 					m.nameInput.Blur()
 				}
 				return m, nil
@@ -156,7 +169,6 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.step = createStepInput
 				m.focusIndex = 1
-				m.refInput.Focus()
 				m.nameInput.Blur()
 				return m, nil
 			}
@@ -164,7 +176,7 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.result = CreateResult{
 					Type:        m.types[m.tabIndex],
 					UseExisting: m.selected != nil,
-					Ref:         m.refInput.Value(),
+					BaseBranch:  m.baseOptions[m.baseIndex].value,
 					Name:        m.nameInput.Value(),
 				}
 				if m.selected != nil {
@@ -172,6 +184,16 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.step = createStepDone
 				return m, tea.Quit
+			}
+		case "up", "k", "left", "h":
+			if m.step == createStepInput && m.focusIndex == 1 {
+				m.baseIndex = (m.baseIndex + len(m.baseOptions) - 1) % len(m.baseOptions)
+				return m, nil
+			}
+		case "down", "j", "right", "l":
+			if m.step == createStepInput && m.focusIndex == 1 {
+				m.baseIndex = (m.baseIndex + 1) % len(m.baseOptions)
+				return m, nil
 			}
 		}
 	}
@@ -184,13 +206,12 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.step == createStepInput {
-		var cmd tea.Cmd
 		if m.focusIndex == 0 {
+			var cmd tea.Cmd
 			m.nameInput, cmd = m.nameInput.Update(msg)
-		} else {
-			m.refInput, cmd = m.refInput.Update(msg)
+			return m, cmd
 		}
-		return m, cmd
+		return m, nil
 	}
 
 	return m, nil
@@ -203,14 +224,27 @@ func (m createModel) View() string {
 		if m.selected != nil {
 			nameLabel = "Workbench name (ignored for reuse):"
 		}
-		return fmt.Sprintf("%s\n\nType: %s\n\n%s\n%s\n\nCheckout (branch or PR #):\n%s\n\n(tab to switch input, enter to confirm)",
+		baseOptions := renderBaseBranchOptions(m.baseOptions, m.baseIndex)
+		return fmt.Sprintf("%s\n\nType: %s\n\n%s\n%s\n\nBase branch:\n%s\n\n(tab to switch input, arrows to change base, enter to confirm)",
 			header,
 			m.types[m.tabIndex],
 			nameLabel,
 			m.nameInput.View(),
-			m.refInput.View(),
+			baseOptions,
 		)
 	}
 
 	return renderTabs(m.types, m.tabIndex, m.lists[m.types[m.tabIndex]].View())
+}
+
+func renderBaseBranchOptions(options []baseBranchOption, active int) string {
+	parts := make([]string, 0, len(options))
+	for i, option := range options {
+		style := inactiveTabStyle
+		if i == active {
+			style = activeTabStyle
+		}
+		parts = append(parts, style.Render(option.label))
+	}
+	return strings.Join(parts, " | ")
 }

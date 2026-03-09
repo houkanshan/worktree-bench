@@ -11,7 +11,20 @@ import (
 	"worktree-bench/internal/ui"
 )
 
+type dashboardOptions struct {
+	swapOnSelect bool
+	swapOnCreate bool
+}
+
 func runDashboard(cmd *cobra.Command, args []string) error {
+	return runDashboardWithOptions(cmd, dashboardOptions{})
+}
+
+func runSwapDashboard(cmd *cobra.Command, args []string) error {
+	return runDashboardWithOptions(cmd, dashboardOptions{swapOnSelect: true, swapOnCreate: true})
+}
+
+func runDashboardWithOptions(cmd *cobra.Command, opts dashboardOptions) error {
 	repoRoot, err := gitutil.RepoRoot()
 	if err != nil {
 		return err
@@ -48,7 +61,13 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(os.Stdout, flow.message)
 		}
 		if flow.targetPath != "" {
-			return emitDirective(cmd, flow.targetPath)
+			targetPath := flow.targetPath
+			if opts.swapOnCreate {
+				if targetPath, err = bench.Switch(repoRoot, targetPath, true); err != nil {
+					return err
+				}
+			}
+			return emitDirective(cmd, targetPath)
 		}
 		return nil
 	case ui.DashboardActionSwitch:
@@ -56,7 +75,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 		if selected == nil {
 			return fmt.Errorf("workbench not found")
 		}
-		targetPath, err := bench.Switch(repoRoot, selected.Path, true)
+		targetPath, err := bench.Switch(repoRoot, selected.Path, opts.swapOnSelect)
 		if err != nil {
 			return err
 		}
