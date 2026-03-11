@@ -5,15 +5,15 @@
 
 ## Key concepts
 - **Workbench types**
-  - **full**: setup + dev server
-  - **light**: setup only
-  - **minimal**: plain worktree
+  - **large**: setup + dev server
+  - **medium**: setup only
+  - **small**: plain worktree
 - **Pool metadata**
   - Stored in `.worktree-bench/pool.json` under the repo root.
   - Each workbench tracks `id`, `name`, `type`, `path`, `created_at`, `last_setup`, and optional dev server metadata.
 - **Settings**
   - Stored in `.worktree-bench/config.json`.
-  - Includes `worktrees_dir`, `setup_cmd`, `dev_cmd`.
+  - Includes `worktrees_dir`, `setup_cmd`, `dev_cmd`, `branch_prefix`, and `worktree_name_prefix`.
   - Defaults are inferred from lockfiles / `package.json` and can be edited.
 
 ## Runtime flow

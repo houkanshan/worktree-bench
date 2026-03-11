@@ -43,7 +43,7 @@ func RunSwitch(benches []config.Workbench) (SwitchResult, error) {
 }
 
 func newSwitchModel(benches []config.Workbench, statuses map[string]BenchStatus) switchModel {
-	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
+	types := config.WorkbenchTypes()
 	lists := make(map[string]list.Model)
 
 	for _, benchType := range types {

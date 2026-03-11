@@ -3,11 +3,19 @@
 # Works for bash/zsh.
 
 wtb() {
-  local directive_file exit_code
+  local directive_file exit_code bin repo_root
   directive_file="$(mktemp)"
 
-  # Ensure worktree-bench is in PATH.
-  WTB_DIRECTIVE_FILE="$directive_file" worktree-bench "$@"
+  bin="${WTB_BIN:-worktree-bench}"
+  if [ -z "${WTB_BIN:-}" ]; then
+    if repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+      if [ -x "$repo_root/worktree-bench" ]; then
+        bin="$repo_root/worktree-bench"
+      fi
+    fi
+  fi
+
+  WTB_DIRECTIVE_FILE="$directive_file" "$bin" "$@"
   exit_code=$?
 
   if [ -s "$directive_file" ]; then

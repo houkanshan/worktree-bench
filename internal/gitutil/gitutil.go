@@ -103,6 +103,31 @@ func Fetch(path string) error {
 	return runGit(path, "fetch", "--all", "--prune")
 }
 
+// ResolvePrimaryBranch returns the best default base branch for a repository.
+// It prefers master when present for backward compatibility, then falls back to main.
+func ResolvePrimaryBranch(path string) (string, error) {
+	candidates := []string{"master", "main"}
+	for _, branch := range candidates {
+		exists, err := gitRefExists(path, branch)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return branch, nil
+		}
+
+		exists, err = gitRefExists(path, "origin/"+branch)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return branch, nil
+		}
+	}
+
+	return "master", nil
+}
+
 func CheckoutBranch(path, branch string) error {
 	if err := runGit(path, "checkout", branch); err == nil {
 		return nil
@@ -127,6 +152,26 @@ func CheckoutNewBranch(path, branch, base string) error {
 	} else {
 		return err
 	}
+}
+
+func gitRefExists(path, ref string) (bool, error) {
+	args := []string{"rev-parse", "--verify", "--quiet", ref + "^{commit}"}
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+
+	detail := strings.TrimSpace(string(out))
+	if detail != "" {
+		return false, fmt.Errorf("git %s: %s", strings.Join(args, " "), detail)
+	}
+	return false, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 }
 
 func WorktreeAdd(repoRoot, path, branch, base string) error {

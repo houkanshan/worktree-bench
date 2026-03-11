@@ -18,6 +18,13 @@ var prPattern = regexp.MustCompile(`^(#|pr:)?(\d+)$`)
 
 const tempCommitMessage = "__WTSWAP_TEMP__"
 
+func tracef(format string, args ...any) {
+	if os.Getenv("WTB_TRACE") == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[wtb] "+format+"\n", args...)
+}
+
 func DetectSetupCmd(repoRoot string) string {
 	if fileExists(filepath.Join(repoRoot, "pnpm-lock.yaml")) {
 		return "pnpm install"
@@ -76,9 +83,11 @@ func EnsureSettings(repoRoot string) (config.Settings, error) {
 }
 
 func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input CreateInput) (config.Pool, *config.Workbench, error) {
-	if input.Type == "" {
-		return pool, nil, errors.New("missing workbench type")
+	benchType := config.NormalizeWorkbenchType(input.Type)
+	if !config.IsWorkbenchType(benchType) {
+		return pool, nil, fmt.Errorf("unsupported workbench type %q", input.Type)
 	}
+	input.Type = benchType
 	baseBranch := strings.TrimSpace(input.BaseBranch)
 	if baseBranch == "" {
 		return pool, nil, errors.New("missing base branch")
@@ -100,7 +109,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	}
 
 	if input.Name == "" {
-		input.Name = nextName(pool, input.Type)
+		input.Name = nextName(pool, benchType, settings.WorktreeNamePrefix)
 	}
 	benchPath := filepath.Join(settings.WorktreesDir, input.Name)
 	if err := os.MkdirAll(settings.WorktreesDir, 0o755); err != nil {
@@ -113,12 +122,12 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	newBench := config.Workbench{
 		ID:        config.NewWorkbenchID(),
 		Name:      input.Name,
-		Type:      input.Type,
+		Type:      benchType,
 		Path:      benchPath,
 		CreatedAt: config.NowString(),
 	}
 
-	if input.Type == config.TypeFull || input.Type == config.TypeLight {
+	if benchType == config.TypeLarge || benchType == config.TypeMedium {
 		if settings.SetupCmd != "" {
 			if err := runCommand(benchPath, settings.SetupCmd); err != nil {
 				return pool, nil, err
@@ -127,7 +136,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		}
 	}
 
-	if input.Type == config.TypeFull && settings.DevCmd != "" {
+	if benchType == config.TypeLarge && settings.DevCmd != "" {
 		pid, err := startCommand(benchPath, settings.DevCmd)
 		if err != nil {
 			return pool, nil, err
@@ -200,14 +209,30 @@ func findBench(pool config.Pool, id string) *config.Workbench {
 	return nil
 }
 
-func nextName(pool config.Pool, benchType string) string {
-	count := 0
+func nextName(pool config.Pool, benchType string, prefix string) string {
+	shortName := config.WorkbenchTypeShortName(benchType)
+	if shortName == "" {
+		shortName = benchType
+	}
+	namePrefix := fmt.Sprintf("%s%s-", prefix, shortName)
+	next := 1
 	for _, bench := range pool.Benches {
-		if bench.Type == benchType {
-			count++
+		if config.NormalizeWorkbenchType(bench.Type) != benchType {
+			continue
+		}
+		if !strings.HasPrefix(bench.Name, namePrefix) {
+			continue
+		}
+		suffix := strings.TrimPrefix(bench.Name, namePrefix)
+		index, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+		if index >= next {
+			next = index + 1
 		}
 	}
-	return fmt.Sprintf("%s-%d", benchType, count+1)
+	return fmt.Sprintf("%s%d", namePrefix, next)
 }
 
 func fileExists(path string) bool {
@@ -217,6 +242,7 @@ func fileExists(path string) bool {
 
 // Switch handles swapping worktrees if requested and returns the target path.
 func Switch(repoRoot string, targetPath string, swap bool) (string, error) {
+	tracef("switch: swap=%t target=%s", swap, targetPath)
 	if !swap {
 		return targetPath, nil
 	}
@@ -245,6 +271,7 @@ func Switch(repoRoot string, targetPath string, swap bool) (string, error) {
 }
 
 func swapBranches(currentPath, targetPath string) error {
+	tracef("swap-branches: current=%s target=%s", currentPath, targetPath)
 	currentBranch, err := branchOrError(currentPath, "current")
 	if err != nil {
 		return err
@@ -395,9 +422,11 @@ type DeleteInput struct {
 
 // AdoptWorkbench registers the current worktree as a workbench.
 func AdoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input AdoptInput) (config.Pool, *config.Workbench, error) {
-	if input.Type == "" {
-		return pool, nil, errors.New("missing workbench type")
+	benchType := config.NormalizeWorkbenchType(input.Type)
+	if !config.IsWorkbenchType(benchType) {
+		return pool, nil, fmt.Errorf("unsupported workbench type %q", input.Type)
 	}
+	input.Type = benchType
 	if findBenchByPath(pool, repoRoot) != nil {
 		return pool, nil, errors.New("current worktree is already registered")
 	}
@@ -409,19 +438,19 @@ func AdoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool,
 	newBench := config.Workbench{
 		ID:        config.NewWorkbenchID(),
 		Name:      name,
-		Type:      input.Type,
+		Type:      benchType,
 		Path:      repoRoot,
 		CreatedAt: config.NowString(),
 	}
 
-	if input.RunSetup && settings.SetupCmd != "" && input.Type != config.TypeMinimal {
+	if input.RunSetup && settings.SetupCmd != "" && benchType != config.TypeSmall {
 		if err := runCommand(repoRoot, settings.SetupCmd); err != nil {
 			return pool, nil, err
 		}
 		newBench.LastSetup = config.NowString()
 	}
 
-	if input.RunDev && input.Type == config.TypeFull && settings.DevCmd != "" {
+	if input.RunDev && benchType == config.TypeLarge && settings.DevCmd != "" {
 		pid, err := startCommand(repoRoot, settings.DevCmd)
 		if err != nil {
 			return pool, nil, err

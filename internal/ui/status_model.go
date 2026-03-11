@@ -23,7 +23,7 @@ func RunStatus(benches []config.Workbench) error {
 }
 
 func newStatusModel(benches []config.Workbench, statuses map[string]BenchStatus) statusModel {
-	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
+	types := config.WorkbenchTypes()
 	lists := make(map[string]list.Model)
 	for _, benchType := range types {
 		items := []list.Item{}

@@ -41,7 +41,7 @@ func RunDelete(benches []config.Workbench) (DeleteResult, error) {
 }
 
 func newDeleteModel(benches []config.Workbench, statuses map[string]BenchStatus) deleteModel {
-	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
+	types := config.WorkbenchTypes()
 	lists := make(map[string]list.Model)
 
 	for _, benchType := range types {

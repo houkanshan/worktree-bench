@@ -55,7 +55,7 @@ func RunAdoptWithType(currentPath string, defaultName string, setupCmd string, d
 }
 
 func newAdoptModel(currentPath string, defaultName string, setupCmd string, devCmd string, fixedType string) adoptModel {
-	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
+	types := config.WorkbenchTypes()
 	nameInput := textinput.New()
 	nameInput.Placeholder = defaultName
 	nameInput.CharLimit = 64
@@ -189,11 +189,11 @@ func (m adoptModel) resolveName() string {
 }
 
 func (m adoptModel) setupEligible() bool {
-	return m.setupCmd != "" && m.types[m.tabIndex] != config.TypeMinimal
+	return m.setupCmd != "" && m.types[m.tabIndex] != config.TypeSmall
 }
 
 func (m adoptModel) devEligible() bool {
-	return m.devCmd != "" && m.types[m.tabIndex] == config.TypeFull
+	return m.devCmd != "" && m.types[m.tabIndex] == config.TypeLarge
 }
 
 func (m *adoptModel) ensureEligibility() {

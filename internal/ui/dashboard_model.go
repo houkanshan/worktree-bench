@@ -52,7 +52,7 @@ func RunDashboard(benches []config.Workbench) (DashboardResult, error) {
 }
 
 func newDashboardModel(benches []config.Workbench, statuses map[string]BenchStatus) dashboardModel {
-	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
+	types := config.WorkbenchTypes()
 	lists := make(map[string]list.Model)
 
 	for _, benchType := range types {

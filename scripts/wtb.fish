@@ -3,7 +3,17 @@ function wtb
     set -l args $argv
     set -l directive_file (mktemp)
 
-    env WTB_DIRECTIVE_FILE=$directive_file worktree-bench $args
+    set -l bin worktree-bench
+    if test -n "$WTB_BIN"
+        set bin $WTB_BIN
+    else
+        set -l repo_root (git rev-parse --show-toplevel 2>/dev/null)
+        if test -n "$repo_root"; and test -x "$repo_root/worktree-bench"
+            set bin "$repo_root/worktree-bench"
+        end
+    end
+
+    env WTB_DIRECTIVE_FILE=$directive_file $bin $args
     set -l exit_code $status
 
     if test -s "$directive_file"

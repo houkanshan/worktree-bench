@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"worktree-bench/internal/gitutil"
@@ -22,9 +23,16 @@ const (
 )
 
 const (
-	TypeFull    = "full"
-	TypeLight   = "light"
-	TypeMinimal = "minimal"
+	TypeLarge  = "large"
+	TypeMedium = "medium"
+	TypeSmall  = "small"
+)
+
+const (
+	legacyTypeFull    = "full"
+	legacyTypeLight   = "light"
+	legacyTypeMinimal = "minimal"
+	legacyTypeMinimum = "minimum"
 )
 
 type Pool struct {
@@ -51,10 +59,11 @@ type DevServer struct {
 }
 
 type Settings struct {
-	WorktreesDir string `json:"worktrees_dir"`
-	SetupCmd     string `json:"setup_cmd"`
-	DevCmd       string `json:"dev_cmd"`
-	BranchPrefix string `json:"branch_prefix"`
+	WorktreesDir       string `json:"worktrees_dir"`
+	SetupCmd           string `json:"setup_cmd"`
+	DevCmd             string `json:"dev_cmd"`
+	BranchPrefix       string `json:"branch_prefix"`
+	WorktreeNamePrefix string `json:"worktree_name_prefix"`
 }
 
 func LoadSettings(repoRoot string) (Settings, error) {
@@ -126,6 +135,9 @@ func LoadPool(repoRoot string, settings Settings) (Pool, error) {
 	if pool.RepoRoot == "" {
 		pool.RepoRoot = defaultsRoot
 	}
+	for i := range pool.Benches {
+		pool.Benches[i].Type = NormalizeWorkbenchType(pool.Benches[i].Type)
+	}
 
 	return pool, nil
 }
@@ -182,6 +194,46 @@ func repoKey(repoRoot string) string {
 
 func NewWorkbenchID() string {
 	return fmt.Sprintf("wb-%d", time.Now().UnixNano())
+}
+
+func WorkbenchTypes() []string {
+	return []string{TypeLarge, TypeMedium, TypeSmall}
+}
+
+func IsWorkbenchType(value string) bool {
+	switch NormalizeWorkbenchType(value) {
+	case TypeLarge, TypeMedium, TypeSmall:
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizeWorkbenchType(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case TypeLarge, legacyTypeFull:
+		return TypeLarge
+	case TypeMedium, legacyTypeLight:
+		return TypeMedium
+	case TypeSmall, legacyTypeMinimal, legacyTypeMinimum:
+		return TypeSmall
+	default:
+		return normalized
+	}
+}
+
+func WorkbenchTypeShortName(benchType string) string {
+	switch NormalizeWorkbenchType(benchType) {
+	case TypeLarge:
+		return "l"
+	case TypeMedium:
+		return "m"
+	case TypeSmall:
+		return "s"
+	default:
+		return ""
+	}
 }
 
 // NewBranchName generates a branch name as "{prefix}{4-digit-hex}".

@@ -66,7 +66,7 @@ func RunCreateWithType(benches []config.Workbench, fixedType string) (CreateResu
 }
 
 func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus, fixedType string) createModel {
-	types := []string{config.TypeFull, config.TypeLight, config.TypeMinimal}
+	types := config.WorkbenchTypes()
 	lists := make(map[string]list.Model)
 
 	for _, benchType := range types {
@@ -93,7 +93,7 @@ func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus,
 	nameInput.Blur()
 
 	baseOptions := []baseBranchOption{
-		{label: "master", value: baseBranchMaster},
+		{label: "master/main", value: baseBranchMaster},
 		{label: "current branch", value: baseBranchCurrent},
 	}
 	baseIndex := 0

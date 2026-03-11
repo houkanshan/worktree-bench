@@ -101,7 +101,7 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 
 func runCreateFromDashboard(repoRoot string, settings config.Settings, pool config.Pool, benchType string) (createFlowResult, error) {
 	if benchType == "" {
-		benchType = config.TypeFull
+		benchType = config.TypeLarge
 	}
 
 	if bench.FindWorkbenchByPath(pool, repoRoot) == nil {
@@ -187,7 +187,13 @@ func emitDirective(cmd *cobra.Command, targetPath string) error {
 		directiveFile = os.Getenv(directiveEnv)
 	}
 	if directiveFile != "" {
+		if os.Getenv("WTB_TRACE") != "" {
+			fmt.Fprintf(os.Stderr, "[wtb] directive-file=%s cd '%s'\n", directiveFile, targetPath)
+		}
 		return appendDirective(directiveFile, targetPath)
+	}
+	if os.Getenv("WTB_TRACE") != "" {
+		fmt.Fprintf(os.Stderr, "[wtb] directive-stdout cd '%s'\n", targetPath)
 	}
 	fmt.Printf("cd '%s'\n", targetPath)
 	return nil
@@ -197,6 +203,9 @@ func resolveBaseBranch(repoRoot string, selection string) (string, error) {
 	value := strings.TrimSpace(selection)
 	if value == "" {
 		value = baseBranchMaster
+	}
+	if value == baseBranchMaster {
+		return gitutil.ResolvePrimaryBranch(repoRoot)
 	}
 	if value == baseBranchCurrent {
 		branch, err := gitutil.Branch(repoRoot)

@@ -4,9 +4,9 @@ A Bubble Tea TUI for managing a pool of git worktree workbenches.
 
 ## Features
 - **Workbench pool** with three types:
-  - **full**: setup + dev server
-  - **light**: setup only
-  - **minimal**: plain worktree
+  - **large**: setup + dev server
+  - **medium**: setup only
+  - **small**: plain worktree
 - **TUI create / swap / status / adopt / delete** with tabbed workbench types
 - **Status line** shows branch, PR (via `gh`), and uncommitted line counts
 - **Shell directives** for `cd` so changing workbenches updates your shell session
@@ -22,31 +22,31 @@ Developer workflow
 └───────────────┘                                           │
                                                            │ swap anytime if scope grows
                                                            ▼
-                     workbenches (more minimal > light > full)
+                     workbenches (more small > medium > large)
 
   ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
-  │ minimal/<name>       │  │ minimal/<name>       │  │ minimal/<name>       │
+  │ small/<name>         │  │ small/<name>         │  │ small/<name>         │
   │ PR review / reading  │  │ tiny change          │  │ temporary use        │
   │ fast + cheap         │  │ fast + cheap         │  │ fast + cheap         │
   └──────────────────────┘  └──────────────────────┘  └──────────────────────┘
 
         ┌──────────────────────┐      ┌──────────────────────┐
-        │ light/<name>         │      │ light/<name>         │
+        │ medium/<name>        │      │ medium/<name>        │
         │ small fixes          │      │ quick changes        │
         │ setup only           │      │ setup only           │
         └──────────────────────┘      └──────────────────────┘
 
                  ┌──────────────────────┐
-                 │ full/<name>          │
+                 │ large/<name>         │
                  │ heavy features       │
                  │ setup + dev server   │
                  └──────────────────────┘
 
 Notes:
-- Pick minimal for review/reading or tiny changes.
-- Pick light for small fixes.
-- Pick full for heavy feature work.
-- When full/light are busy, use a temporary minimal/light bench.
+- Pick small for review/reading or tiny changes.
+- Pick medium for small fixes.
+- Pick large for heavy feature work.
+- When large/medium are busy, use a temporary small/medium bench.
 ```
 
 ## Requirements
@@ -136,10 +136,11 @@ If you followed the shell setup above, you can just run `wtb swap`.
 
 ## Configuration
 Settings and pool data are stored in the repo root under `.worktree-bench/`:
-- `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`
+- `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`, `branch_prefix`, `worktree_name_prefix`
 - `pool.json`: workbench metadata
 
 Defaults are inferred from lockfiles and `package.json` (when available).
+Auto-generated workbench names use `{worktree_name_prefix}{size-short}-{number}`, where size short is `l`, `m`, or `s`.
 
 ## Development
 ```bash
