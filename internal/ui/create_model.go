@@ -32,6 +32,7 @@ type CreateResult struct {
 	BenchID     string
 	Name        string
 	BaseBranch  string
+	RunInit     bool
 	Cancelled   bool
 }
 
@@ -46,16 +47,18 @@ type createModel struct {
 	baseOptions []baseBranchOption
 	baseIndex   int
 	focusIndex  int
+	initCmd     string
+	runInit     bool
 	result      CreateResult
 }
 
-func RunCreate(benches []config.Workbench) (CreateResult, error) {
-	return RunCreateWithType(benches, "")
+func RunCreate(benches []config.Workbench, initCmd string) (CreateResult, error) {
+	return RunCreateWithType(benches, "", initCmd)
 }
 
-func RunCreateWithType(benches []config.Workbench, fixedType string) (CreateResult, error) {
+func RunCreateWithType(benches []config.Workbench, fixedType string, initCmd string) (CreateResult, error) {
 	statuses := LoadBenchStatuses(benches)
-	model := newCreateModel(benches, statuses, fixedType)
+	model := newCreateModel(benches, statuses, fixedType, initCmd)
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
@@ -65,7 +68,7 @@ func RunCreateWithType(benches []config.Workbench, fixedType string) (CreateResu
 	return m.result, nil
 }
 
-func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus, fixedType string) createModel {
+func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus, fixedType string, initCmd string) createModel {
 	types := config.WorkbenchTypes()
 	lists := make(map[string]list.Model)
 
@@ -96,7 +99,6 @@ func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus,
 		{label: "master/main", value: baseBranchMaster},
 		{label: "current branch", value: baseBranchCurrent},
 	}
-	baseIndex := 0
 
 	tabIndex := 0
 	lockType := false
@@ -120,8 +122,10 @@ func newCreateModel(benches []config.Workbench, statuses map[string]BenchStatus,
 		lockType:    lockType,
 		nameInput:   nameInput,
 		baseOptions: baseOptions,
-		baseIndex:   baseIndex,
+		baseIndex:   0,
 		focusIndex:  1,
+		initCmd:     initCmd,
+		runInit:     strings.TrimSpace(initCmd) != "",
 	}
 }
 
@@ -178,12 +182,18 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					UseExisting: m.selected != nil,
 					BaseBranch:  m.baseOptions[m.baseIndex].value,
 					Name:        m.nameInput.Value(),
+					RunInit:     m.runInit,
 				}
 				if m.selected != nil {
 					m.result.BenchID = m.selected.ID
 				}
 				m.step = createStepDone
 				return m, tea.Quit
+			}
+		case "i":
+			if m.step == createStepInput && m.initEligible() {
+				m.runInit = !m.runInit
+				return m, nil
 			}
 		case "up", "k", "left", "h":
 			if m.step == createStepInput && m.focusIndex == 1 {
@@ -225,12 +235,22 @@ func (m createModel) View() string {
 			nameLabel = "Workbench name (ignored for reuse):"
 		}
 		baseOptions := renderBaseBranchOptions(m.baseOptions, m.baseIndex)
-		return fmt.Sprintf("%s\n\nType: %s\n\n%s\n%s\n\nBase branch:\n%s\n\n(tab to switch input, arrows to change base, enter to confirm)",
+		initStatus := "Init: n/a"
+		if m.initEligible() {
+			status := "no"
+			if m.runInit {
+				status = "yes"
+			}
+			initStatus = fmt.Sprintf("Init (i): %s (%s)", status, m.initCmd)
+		}
+
+		return fmt.Sprintf("%s\n\nType: %s\n\n%s\n%s\n\nBase branch:\n%s\n\n%s\n\n(tab to switch input, arrows to change base, enter to confirm)",
 			header,
 			m.types[m.tabIndex],
 			nameLabel,
 			m.nameInput.View(),
 			baseOptions,
+			initStatus,
 		)
 	}
 
@@ -247,4 +267,8 @@ func renderBaseBranchOptions(options []baseBranchOption, active int) string {
 		parts = append(parts, style.Render(option.label))
 	}
 	return strings.Join(parts, " | ")
+}
+
+func (m createModel) initEligible() bool {
+	return strings.TrimSpace(m.initCmd) != ""
 }

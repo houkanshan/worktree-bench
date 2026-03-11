@@ -136,7 +136,7 @@ If you followed the shell setup above, you can just run `wtb swap`.
 
 ## Configuration
 Settings and pool data are stored in the repo root under `.worktree-bench/`:
-- `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`, `branch_prefix`, `worktree_name_prefix`
+- `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`, `worktree_name_prefix`
 - `pool.json`: workbench metadata
 
 Defaults are inferred from lockfiles and `package.json` (when available).

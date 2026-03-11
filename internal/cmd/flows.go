@@ -21,7 +21,7 @@ type createFlowResult struct {
 }
 
 func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) (createFlowResult, error) {
-	result, err := ui.RunCreate(pool.Benches)
+	result, err := ui.RunCreate(pool.Benches, settings.InitCmd)
 	if err != nil {
 		return createFlowResult{}, err
 	}
@@ -57,7 +57,7 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 			if defaultName == "" {
 				defaultName = filepath.Base(repoRoot)
 			}
-			adoptResult, err := ui.RunAdoptWithType(repoRoot, defaultName, settings.SetupCmd, settings.DevCmd, result.Type)
+			adoptResult, err := ui.RunAdoptWithType(repoRoot, defaultName, settings.SetupCmd, settings.DevCmd, settings.InitCmd, result.Type)
 			if err != nil {
 				return createFlowResult{}, err
 			}
@@ -69,6 +69,7 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 				Name:     adoptResult.Name,
 				RunSetup: adoptResult.RunSetup,
 				RunDev:   adoptResult.RunDev,
+				RunInit:  adoptResult.RunInit,
 			}
 			updated, adopted, err := bench.AdoptWorkbench(repoRoot, settings, pool, input)
 			message := ""
@@ -88,6 +89,7 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 		UseExisting: false,
 		Name:        result.Name,
 		BaseBranch:  baseBranch,
+		RunInit:     result.RunInit,
 	}
 	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
@@ -114,7 +116,7 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 		}
 		if choice.UseCurrent {
 			defaultName := filepath.Base(repoRoot)
-			adoptResult, err := ui.RunAdoptWithType(repoRoot, defaultName, settings.SetupCmd, settings.DevCmd, benchType)
+			adoptResult, err := ui.RunAdoptWithType(repoRoot, defaultName, settings.SetupCmd, settings.DevCmd, settings.InitCmd, benchType)
 			if err != nil {
 				return createFlowResult{}, err
 			}
@@ -126,6 +128,7 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 				Name:     adoptResult.Name,
 				RunSetup: adoptResult.RunSetup,
 				RunDev:   adoptResult.RunDev,
+				RunInit:  adoptResult.RunInit,
 			}
 			updated, adopted, err := bench.AdoptWorkbench(repoRoot, settings, pool, input)
 			message := ""
@@ -136,7 +139,7 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 		}
 	}
 
-	result, err := ui.RunCreateWithType(pool.Benches, benchType)
+	result, err := ui.RunCreateWithType(pool.Benches, benchType, settings.InitCmd)
 	if err != nil {
 		return createFlowResult{}, err
 	}
@@ -153,6 +156,7 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 		UseExisting: false,
 		Name:        result.Name,
 		BaseBranch:  baseBranch,
+		RunInit:     result.RunInit,
 	}
 	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""

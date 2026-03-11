@@ -30,7 +30,7 @@ func newAdoptCommand() *cobra.Command {
 			}
 
 			defaultName := filepath.Base(repoRoot)
-			result, err := ui.RunAdopt(repoRoot, defaultName, settings.SetupCmd, settings.DevCmd)
+			result, err := ui.RunAdopt(repoRoot, defaultName, settings.SetupCmd, settings.DevCmd, settings.InitCmd)
 			if err != nil {
 				return err
 			}
@@ -43,6 +43,7 @@ func newAdoptCommand() *cobra.Command {
 				Name:     result.Name,
 				RunSetup: result.RunSetup,
 				RunDev:   result.RunDev,
+				RunInit:  result.RunInit,
 			}
 
 			pool, adopted, err := bench.AdoptWorkbench(repoRoot, settings, pool, input)

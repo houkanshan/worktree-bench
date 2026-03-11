@@ -144,6 +144,15 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		newBench.DevServer = &config.DevServer{Cmd: settings.DevCmd, PID: pid, StartedAt: config.NowString()}
 	}
 
+	if input.RunInit && settings.InitCmd != "" {
+		if err := runCommand(benchPath, settings.InitCmd); err != nil {
+			if newBench.DevServer != nil {
+				killProcess(newBench.DevServer.PID)
+			}
+			return pool, nil, err
+		}
+	}
+
 	pool.Benches = append(pool.Benches, newBench)
 	return pool, &newBench, nil
 }
@@ -195,9 +204,20 @@ func startCommand(dir, command string) (int, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%s: %w", command, err)
 	}
 	return cmd.Process.Pid, nil
+}
+
+func killProcess(pid int) {
+	if pid <= 0 {
+		return
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	_ = proc.Kill()
 }
 
 func findBench(pool config.Pool, id string) *config.Workbench {
@@ -404,6 +424,7 @@ type CreateInput struct {
 	BenchID     string
 	Name        string
 	BaseBranch  string
+	RunInit     bool
 }
 
 // AdoptInput describes adopting the current worktree into the pool.
@@ -412,6 +433,7 @@ type AdoptInput struct {
 	Name     string
 	RunSetup bool
 	RunDev   bool
+	RunInit  bool
 }
 
 // DeleteInput describes deleting a workbench.
@@ -456,6 +478,15 @@ func AdoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool,
 			return pool, nil, err
 		}
 		newBench.DevServer = &config.DevServer{Cmd: settings.DevCmd, PID: pid, StartedAt: config.NowString()}
+	}
+
+	if input.RunInit && settings.InitCmd != "" {
+		if err := runCommand(repoRoot, settings.InitCmd); err != nil {
+			if newBench.DevServer != nil {
+				killProcess(newBench.DevServer.PID)
+			}
+			return pool, nil, err
+		}
 	}
 
 	pool.Benches = append(pool.Benches, newBench)

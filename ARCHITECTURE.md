@@ -13,7 +13,7 @@
   - Each workbench tracks `id`, `name`, `type`, `path`, `created_at`, `last_setup`, and optional dev server metadata.
 - **Settings**
   - Stored in `.worktree-bench/config.json`.
-  - Includes `worktrees_dir`, `setup_cmd`, `dev_cmd`, `branch_prefix`, and `worktree_name_prefix`.
+  - Includes `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`, and `worktree_name_prefix`.
   - Defaults are inferred from lockfiles / `package.json` and can be edited.
 
 ## Runtime flow
@@ -23,7 +23,7 @@
 - **create**
   - TUI lets you pick a type and reuse an existing bench or create a new one.
   - Runs `git worktree add`, optionally `gh pr checkout`.
-  - Runs setup and/or dev server based on type.
+  - Runs setup/dev based on type, then optional `init_cmd` for all types.
 - **switch**
   - TUI lets you pick a workbench by type.
   - Optionally swaps current worktree with the target (via `git worktree move`).
@@ -32,7 +32,7 @@
   - TUI shows branch, PR (via `gh`), and uncommitted line counts.
 - **adopt**
   - Registers the current worktree as a workbench.
-  - Prompts for type, name, and whether to run setup/dev.
+  - Prompts for type, name, and whether to run setup/dev/init.
 - **delete**
   - Removes a workbench and its worktree directory.
 

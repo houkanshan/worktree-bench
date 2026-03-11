@@ -62,6 +62,7 @@ type Settings struct {
 	WorktreesDir       string `json:"worktrees_dir"`
 	SetupCmd           string `json:"setup_cmd"`
 	DevCmd             string `json:"dev_cmd"`
+	InitCmd            string `json:"init_cmd"`
 	BranchPrefix       string `json:"branch_prefix"`
 	WorktreeNamePrefix string `json:"worktree_name_prefix"`
 }

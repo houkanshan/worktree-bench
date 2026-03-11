@@ -21,6 +21,7 @@ type AdoptResult struct {
 	Name      string
 	RunSetup  bool
 	RunDev    bool
+	RunInit   bool
 	Cancelled bool
 }
 
@@ -34,17 +35,19 @@ type adoptModel struct {
 	currentPath string
 	setupCmd    string
 	devCmd      string
+	initCmd     string
 	runSetup    bool
 	runDev      bool
+	runInit     bool
 	result      AdoptResult
 }
 
-func RunAdopt(currentPath string, defaultName string, setupCmd string, devCmd string) (AdoptResult, error) {
-	return RunAdoptWithType(currentPath, defaultName, setupCmd, devCmd, "")
+func RunAdopt(currentPath string, defaultName string, setupCmd string, devCmd string, initCmd string) (AdoptResult, error) {
+	return RunAdoptWithType(currentPath, defaultName, setupCmd, devCmd, initCmd, "")
 }
 
-func RunAdoptWithType(currentPath string, defaultName string, setupCmd string, devCmd string, fixedType string) (AdoptResult, error) {
-	model := newAdoptModel(currentPath, defaultName, setupCmd, devCmd, fixedType)
+func RunAdoptWithType(currentPath string, defaultName string, setupCmd string, devCmd string, initCmd string, fixedType string) (AdoptResult, error) {
+	model := newAdoptModel(currentPath, defaultName, setupCmd, devCmd, initCmd, fixedType)
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
@@ -54,7 +57,7 @@ func RunAdoptWithType(currentPath string, defaultName string, setupCmd string, d
 	return m.result, nil
 }
 
-func newAdoptModel(currentPath string, defaultName string, setupCmd string, devCmd string, fixedType string) adoptModel {
+func newAdoptModel(currentPath string, defaultName string, setupCmd string, devCmd string, initCmd string, fixedType string) adoptModel {
 	types := config.WorkbenchTypes()
 	nameInput := textinput.New()
 	nameInput.Placeholder = defaultName
@@ -85,6 +88,8 @@ func newAdoptModel(currentPath string, defaultName string, setupCmd string, devC
 		currentPath: currentPath,
 		setupCmd:    setupCmd,
 		devCmd:      devCmd,
+		initCmd:     initCmd,
+		runInit:     strings.TrimSpace(initCmd) != "",
 	}
 }
 
@@ -118,6 +123,7 @@ func (m adoptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Name:     m.resolveName(),
 					RunSetup: m.runSetup,
 					RunDev:   m.runDev,
+					RunInit:  m.runInit,
 				}
 				m.step = adoptStepDone
 				return m, tea.Quit
@@ -130,6 +136,11 @@ func (m adoptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if m.step == adoptStepConfirm && m.devEligible() {
 				m.runDev = !m.runDev
+				return m, nil
+			}
+		case "i":
+			if m.step == adoptStepConfirm && m.initEligible() {
+				m.runInit = !m.runInit
 				return m, nil
 			}
 		}
@@ -171,6 +182,17 @@ func (m adoptModel) View() string {
 				status = "yes"
 			}
 			lines = append(lines, fmt.Sprintf("Dev server (d): %s (%s)", status, m.devCmd))
+		} else {
+			lines = append(lines, "Dev server: n/a")
+		}
+		if m.initEligible() {
+			status := "no"
+			if m.runInit {
+				status = "yes"
+			}
+			lines = append(lines, fmt.Sprintf("Init (i): %s (%s)", status, m.initCmd))
+		} else {
+			lines = append(lines, "Init: n/a")
 		}
 		lines = append(lines, "\n(enter to confirm)")
 		return fmt.Sprintf("%s\n\n%s", header, strings.Join(lines, "\n"))
@@ -196,11 +218,18 @@ func (m adoptModel) devEligible() bool {
 	return m.devCmd != "" && m.types[m.tabIndex] == config.TypeLarge
 }
 
+func (m adoptModel) initEligible() bool {
+	return strings.TrimSpace(m.initCmd) != ""
+}
+
 func (m *adoptModel) ensureEligibility() {
 	if !m.setupEligible() {
 		m.runSetup = false
 	}
 	if !m.devEligible() {
 		m.runDev = false
+	}
+	if !m.initEligible() {
+		m.runInit = false
 	}
 }
