@@ -220,6 +220,47 @@ func LastCommitTime(path string) (time.Time, error) {
 	return time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
 }
 
+// LastCommitSubject returns the first line of the most recent commit message.
+func LastCommitSubject(path string) (string, error) {
+	args := []string{"-C", path, "log", "-1", "--format=%s"}
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return "", fmt.Errorf("git %s: %s", strings.Join(args[2:], " "), detail)
+		}
+		return "", fmt.Errorf("git %s: %w", strings.Join(args[2:], " "), err)
+	}
+	return firstLine(strings.TrimSpace(string(out))), nil
+}
+
+// BranchDescription returns the configured branch description, if any.
+func BranchDescription(path, branch string) (string, error) {
+	if branch == "" {
+		return "", nil
+	}
+	key := fmt.Sprintf("branch.%s.description", branch)
+	args := []string{"-C", path, "config", "--get", key}
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return "", fmt.Errorf("git %s: %s", strings.Join(args[2:], " "), detail)
+		}
+		return "", fmt.Errorf("git %s: %w", strings.Join(args[2:], " "), err)
+	}
+	return firstLine(strings.TrimSpace(string(out))), nil
+}
+
+func firstLine(text string) string {
+	parts := strings.SplitN(text, "\n", 2)
+	return strings.TrimSpace(parts[0])
+}
+
 // gitOutputError wraps an error from exec.Command().Output() with the git
 // subcommand name and any stderr the process produced.
 func gitOutputError(subcmd string, err error) error {

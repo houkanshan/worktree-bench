@@ -12,6 +12,7 @@ import (
 
 type BenchStatus struct {
 	DirMissing   bool
+	Description  string
 	Branch       string
 	LastCommit   time.Time
 	ChangesLines int
@@ -44,6 +45,17 @@ func LoadBenchStatuses(benches []config.Workbench) map[string]BenchStatus {
 		branch, err := gitutil.Branch(bench.Path)
 		if err == nil {
 			status.Branch = branch
+			if branch != "" && branch != "HEAD" {
+				if desc, err := gitutil.BranchDescription(bench.Path, branch); err == nil {
+					status.Description = desc
+				}
+			}
+		}
+
+		if status.Description == "" {
+			if subject, err := gitutil.LastCommitSubject(bench.Path); err == nil {
+				status.Description = subject
+			}
 		}
 
 		changes, err := gitutil.DiffLines(bench.Path)
@@ -119,6 +131,9 @@ func FormatStatusLine(status BenchStatus) string {
 		return "⚠ directory missing"
 	}
 	parts := []string{}
+	if status.Description != "" {
+		parts = append(parts, status.Description)
+	}
 	if status.Branch != "" {
 		parts = append(parts, fmt.Sprintf("branch: %s", status.Branch))
 	}
