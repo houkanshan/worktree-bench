@@ -105,6 +105,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		if err := gitutil.CheckoutNewBranch(bench.Path, branchName, baseBranch); err != nil {
 			return pool, nil, err
 		}
+		if input.RunInit && settings.InitCmd != "" {
+			if err := runCommand(bench.Path, settings.InitCmd); err != nil {
+				return pool, nil, err
+			}
+		}
 		return pool, bench, nil
 	}
 

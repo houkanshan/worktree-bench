@@ -39,6 +39,7 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 			UseExisting: true,
 			BenchID:     result.BenchID,
 			BaseBranch:  baseBranch,
+			RunInit:     strings.TrimSpace(settings.InitCmd) != "",
 		}
 		updated, _, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 		return createFlowResult{pool: updated}, err
