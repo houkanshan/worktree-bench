@@ -44,8 +44,9 @@ func newStatusCommand() *cobra.Command {
 }
 
 type statusJSON struct {
-	Types   []string          `json:"types"`
-	Benches []statusBenchJSON `json:"benches"`
+	Types        []string          `json:"types"`
+	WorktreesDir string            `json:"worktrees_dir"`
+	Benches      []statusBenchJSON `json:"benches"`
 }
 
 type statusBenchJSON struct {
@@ -76,5 +77,9 @@ func writeStatusJSON(repoRoot string, pool config.Pool, fast bool) error {
 			DirMissing:  status.DirMissing,
 		})
 	}
-	return json.NewEncoder(os.Stdout).Encode(statusJSON{Types: config.WorkbenchTypes(), Benches: benches})
+	return json.NewEncoder(os.Stdout).Encode(statusJSON{
+		Types:        config.WorkbenchTypes(),
+		WorktreesDir: pool.WorktreesDir,
+		Benches:      benches,
+	})
 }

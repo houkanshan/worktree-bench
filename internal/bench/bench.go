@@ -135,7 +135,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if benchType == config.TypeLarge || benchType == config.TypeMedium {
 		if settings.SetupCmd != "" {
 			if err := runCommand(benchPath, settings.SetupCmd); err != nil {
-				return pool, nil, err
+				return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, 0, err)
 			}
 			newBench.LastSetup = config.NowString()
 		}
@@ -144,22 +144,31 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if benchType == config.TypeLarge && settings.DevCmd != "" {
 		pid, err := startCommand(benchPath, settings.DevCmd, input.QuietOutput)
 		if err != nil {
-			return pool, nil, err
+			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, 0, err)
 		}
 		newBench.DevServer = &config.DevServer{Cmd: settings.DevCmd, PID: pid, StartedAt: config.NowString()}
 	}
 
 	if input.RunInit && settings.InitCmd != "" {
 		if err := runCommand(benchPath, settings.InitCmd); err != nil {
+			pid := 0
 			if newBench.DevServer != nil {
-				killProcess(newBench.DevServer.PID)
+				pid = newBench.DevServer.PID
 			}
-			return pool, nil, err
+			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, pid, err)
 		}
 	}
 
 	pool.Benches = append(pool.Benches, newBench)
 	return pool, &newBench, nil
+}
+
+func cleanupCreatedWorkbench(repoRoot, benchPath string, pid int, cause error) error {
+	killProcess(pid)
+	if err := gitutil.WorktreeRemove(repoRoot, benchPath, true); err != nil {
+		return fmt.Errorf("%w (cleanup failed: %v)", cause, err)
+	}
+	return cause
 }
 
 func checkoutRef(path, ref string) error {
