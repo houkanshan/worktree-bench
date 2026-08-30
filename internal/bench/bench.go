@@ -142,7 +142,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	}
 
 	if benchType == config.TypeLarge && settings.DevCmd != "" {
-		pid, err := startCommand(benchPath, settings.DevCmd)
+		pid, err := startCommand(benchPath, settings.DevCmd, input.QuietOutput)
 		if err != nil {
 			return pool, nil, err
 		}
@@ -205,23 +205,34 @@ func runCommand(dir, command string) error {
 
 // RunInitCmd runs the init command in the given directory with the terminal attached.
 func RunInitCmd(dir, command string) error {
+	return RunInitCmdWithOutput(dir, command, true)
+}
+
+// RunInitCmdWithOutput runs the init command, optionally suppressing successful output for machine-readable callers.
+func RunInitCmdWithOutput(dir, command string, attachOutput bool) error {
 	tracef("RunInitCmd: dir=%s cmd=%q", dir, command)
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if attachOutput {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s: %w", command, err)
 	}
 	return nil
 }
 
-func startCommand(dir, command string) (int, error) {
+func startCommand(dir, command string, quietOutput bool) (int, error) {
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if !quietOutput {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("%s: %w", command, err)
 	}
@@ -444,6 +455,7 @@ type CreateInput struct {
 	Name        string
 	BaseBranch  string
 	RunInit     bool
+	QuietOutput bool
 }
 
 // AdoptInput describes adopting the current worktree into the pool.
@@ -492,7 +504,7 @@ func AdoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool,
 	}
 
 	if input.RunDev && benchType == config.TypeLarge && settings.DevCmd != "" {
-		pid, err := startCommand(repoRoot, settings.DevCmd)
+		pid, err := startCommand(repoRoot, settings.DevCmd, false)
 		if err != nil {
 			return pool, nil, err
 		}

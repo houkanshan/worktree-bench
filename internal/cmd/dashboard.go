@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -30,10 +31,20 @@ type directSelection struct {
 	Type      string
 	Name      string
 	Base      string
+	JSON      bool
+}
+
+type selectionJSON struct {
+	BenchID string `json:"benchId"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Path    string `json:"path"`
+	Created bool   `json:"created"`
 }
 
 func addNoTUISelectionFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("new", false, "create a new workbench without opening the selector")
+	cmd.Flags().Bool("json", false, "print the selected workbench as JSON (requires --new or a workbench id)")
 	cmd.Flags().String("type", config.TypeLarge, "workbench type for --new (large, medium, small)")
 	cmd.Flags().String("name", "", "workbench name for --new (defaults to the next pool name)")
 	cmd.Flags().String("base", baseBranchMaster, "base branch for --new (master, current, or a branch name)")
@@ -157,6 +168,7 @@ func normalizeInitCmd(value string) string {
 
 func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, bool, error) {
 	createNew, _ := boolFlag(cmd, "new")
+	jsonOutput, _ := boolFlag(cmd, "json")
 	if createNew && len(args) > 0 {
 		return directSelection{}, false, fmt.Errorf("workbench id cannot be combined with --new")
 	}
@@ -164,6 +176,9 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 		return directSelection{}, false, fmt.Errorf("expected at most one workbench id")
 	}
 	if !createNew && len(args) == 0 {
+		if jsonOutput {
+			return directSelection{}, false, fmt.Errorf("--json requires --new or a workbench id")
+		}
 		return directSelection{}, false, nil
 	}
 
@@ -182,7 +197,7 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 		base = baseBranchMaster
 	}
 
-	direct := directSelection{CreateNew: createNew, Type: benchType, Name: name, Base: base}
+	direct := directSelection{CreateNew: createNew, Type: benchType, Name: name, Base: base, JSON: jsonOutput}
 	if len(args) == 1 {
 		direct.BenchID = strings.TrimSpace(args[0])
 		if direct.BenchID == "" {
@@ -199,10 +214,11 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			return err
 		}
 		input := bench.CreateInput{
-			Type:       direct.Type,
-			Name:       direct.Name,
-			BaseBranch: baseBranch,
-			RunInit:    strings.TrimSpace(settings.InitCmd) != "",
+			Type:        direct.Type,
+			Name:        direct.Name,
+			BaseBranch:  baseBranch,
+			RunInit:     strings.TrimSpace(settings.InitCmd) != "",
+			QuietOutput: direct.JSON,
 		}
 		updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 		if err != nil {
@@ -216,7 +232,9 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 		}
 		invalidateStatusCacheEntries(repoRoot, created.ID)
 		invalidateStatusCachePaths(repoRoot, created.Path)
-		fmt.Fprintf(os.Stdout, "Created workbench %s at %s\n", created.Name, created.Path)
+		if !direct.JSON {
+			fmt.Fprintf(os.Stdout, "Created workbench %s at %s\n", created.Name, created.Path)
+		}
 
 		targetPath := created.Path
 		if opts.swapOnCreate {
@@ -225,7 +243,7 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			}
 			invalidateStatusCacheForPaths(repoRoot, updated, repoRoot, created.Path)
 		}
-		return emitDirective(cmd, targetPath)
+		return emitSelection(cmd, *created, targetPath, true, direct.JSON)
 	}
 
 	selected := findBenchByID(pool, direct.BenchID)
@@ -235,19 +253,32 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 	tracef("direct-switch: bench=%s path=%s initCmd=%q swapOnSelect=%t", selected.Name, selected.Path, settings.InitCmd, opts.swapOnSelect)
 	if strings.TrimSpace(settings.InitCmd) != "" {
 		tracef("direct-switch: running init_cmd %q in %s", settings.InitCmd, selected.Path)
-		if err := bench.RunInitCmd(selected.Path, settings.InitCmd); err != nil {
+		if err := bench.RunInitCmdWithOutput(selected.Path, settings.InitCmd, !direct.JSON); err != nil {
 			return err
 		}
 	}
 	if !opts.swapOnSelect {
-		return emitDirective(cmd, selected.Path)
+		return emitSelection(cmd, *selected, selected.Path, false, direct.JSON)
 	}
 	targetPath, err := bench.Switch(repoRoot, selected.Path, true)
 	if err != nil {
 		return err
 	}
 	invalidateStatusCacheForPaths(repoRoot, pool, repoRoot, selected.Path)
-	return emitDirective(cmd, targetPath)
+	return emitSelection(cmd, *selected, targetPath, false, direct.JSON)
+}
+
+func emitSelection(cmd *cobra.Command, selected config.Workbench, targetPath string, created bool, jsonOutput bool) error {
+	if !jsonOutput {
+		return emitDirective(cmd, targetPath)
+	}
+	return json.NewEncoder(os.Stdout).Encode(selectionJSON{
+		BenchID: selected.ID,
+		Name:    selected.Name,
+		Type:    selected.Type,
+		Path:    targetPath,
+		Created: created,
+	})
 }
 
 func boolFlag(cmd *cobra.Command, name string) (bool, bool) {

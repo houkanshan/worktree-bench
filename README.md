@@ -102,6 +102,16 @@ Shortcuts:
 # one-shot init_cmd override (`-` or empty disables init for this action)
 ./worktree-bench --init-cmd "pnpm install" wb-123
 ./worktree-bench --new --type small --init-cmd -
+
+# machine-readable direct selection (stdout is one JSON document)
+./worktree-bench wb-123 --init-cmd gnm --json
+./worktree-bench --new --type large --init-cmd gnm --json
+```
+
+JSON selection output has the shape:
+
+```json
+{"benchId":"wb-123","name":"repo-l-1","type":"large","path":"/path/to/repo-l-1","created":false}
 ```
 
 ### Create a workbench
