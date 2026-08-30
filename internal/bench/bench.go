@@ -135,7 +135,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if benchType == config.TypeLarge || benchType == config.TypeMedium {
 		if settings.SetupCmd != "" {
 			if err := runCommand(benchPath, settings.SetupCmd); err != nil {
-				return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, 0, err)
+				return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
 			}
 			newBench.LastSetup = config.NowString()
 		}
@@ -144,7 +144,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if benchType == config.TypeLarge && settings.DevCmd != "" {
 		pid, err := startCommand(benchPath, settings.DevCmd, input.QuietOutput)
 		if err != nil {
-			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, 0, err)
+			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
 		}
 		newBench.DevServer = &config.DevServer{Cmd: settings.DevCmd, PID: pid, StartedAt: config.NowString()}
 	}
@@ -155,7 +155,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 			if newBench.DevServer != nil {
 				pid = newBench.DevServer.PID
 			}
-			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, pid, err)
+			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, pid, err)
 		}
 	}
 
@@ -163,10 +163,17 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	return pool, &newBench, nil
 }
 
-func cleanupCreatedWorkbench(repoRoot, benchPath string, pid int, cause error) error {
+func cleanupCreatedWorkbench(repoRoot, benchPath, branch string, pid int, cause error) error {
 	killProcess(pid)
+	var cleanupErrors []string
 	if err := gitutil.WorktreeRemove(repoRoot, benchPath, true); err != nil {
-		return fmt.Errorf("%w (cleanup failed: %v)", cause, err)
+		cleanupErrors = append(cleanupErrors, err.Error())
+	}
+	if err := gitutil.DeleteBranch(repoRoot, branch); err != nil {
+		cleanupErrors = append(cleanupErrors, err.Error())
+	}
+	if len(cleanupErrors) > 0 {
+		return fmt.Errorf("%w (cleanup failed: %s)", cause, strings.Join(cleanupErrors, "; "))
 	}
 	return cause
 }
@@ -257,6 +264,7 @@ func killProcess(pid int) {
 		return
 	}
 	_ = proc.Kill()
+	_, _ = proc.Wait()
 }
 
 func findBench(pool config.Pool, id string) *config.Workbench {

@@ -32,7 +32,7 @@ func newStatusCommand() *cobra.Command {
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			fast, _ := cmd.Flags().GetBool("fast")
 			if jsonOutput {
-				return writeStatusJSON(repoRoot, pool, fast)
+				return writeStatusJSON(repoRoot, settings, pool, fast)
 			}
 
 			return ui.RunStatus(pool.Benches)
@@ -58,7 +58,7 @@ type statusBenchJSON struct {
 	DirMissing  bool   `json:"dir_missing"`
 }
 
-func writeStatusJSON(repoRoot string, pool config.Pool, fast bool) error {
+func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool, fast bool) error {
 	var statuses map[string]ui.BenchStatus
 	if fast {
 		statuses = ui.LoadBenchStatusesCached(repoRoot, pool.Benches, ui.StatusOptions{UseCache: true, Fast: true})
@@ -79,7 +79,7 @@ func writeStatusJSON(repoRoot string, pool config.Pool, fast bool) error {
 	}
 	return json.NewEncoder(os.Stdout).Encode(statusJSON{
 		Types:        config.WorkbenchTypes(),
-		WorktreesDir: pool.WorktreesDir,
+		WorktreesDir: settings.WorktreesDir,
 		Benches:      benches,
 	})
 }

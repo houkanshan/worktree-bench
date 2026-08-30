@@ -229,6 +229,10 @@ func WorktreeRemove(repoRoot, path string, force bool) error {
 	return runGit(repoRoot, args...)
 }
 
+func DeleteBranch(repoRoot, branch string) error {
+	return runGit(repoRoot, "branch", "-D", branch)
+}
+
 // LastCommitTime returns the author date of the most recent commit in the repo at path.
 func LastCommitTime(path string) (time.Time, error) {
 	t, _, err := LastCommitInfo(path)
