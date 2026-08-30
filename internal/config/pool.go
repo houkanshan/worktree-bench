@@ -156,6 +156,11 @@ func SavePool(repoRoot string, pool Pool) error {
 	return writeJSON(poolPath, pool)
 }
 
+func ConfigDir(repoRoot string) (string, error) {
+	configDir, _, err := resolveConfigDir(repoRoot)
+	return configDir, err
+}
+
 func resolveConfigDir(repoRoot string) (string, string, error) {
 	mainRoot, err := gitutil.MainWorktreeRoot(repoRoot)
 	if err == nil && mainRoot != "" {

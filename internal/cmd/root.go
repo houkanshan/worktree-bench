@@ -9,11 +9,13 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:          "worktree-bench",
+		Use:          "worktree-bench [workbench-id]",
 		Short:        "Manage a pool of git worktree workbenches",
 		SilenceUsage: true,
 		RunE:         runDashboard,
 	}
+
+	addNoTUISelectionFlags(rootCmd)
 
 	rootCmd.AddCommand(newCreateCommand())
 	rootCmd.AddCommand(newSwapCommand())
@@ -21,7 +23,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newAdoptCommand())
 	rootCmd.AddCommand(newDeleteCommand())
 	rootCmd.AddCommand(newVersionCommand())
-
 	return rootCmd
 }
 

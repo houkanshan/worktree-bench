@@ -90,6 +90,20 @@ Shortcuts:
 - `enter`: create new ("+ new") or cd to selected workbench
 - `d`: delete selected workbench (confirm y/n)
 
+
+### No-TUI selection
+```bash
+# cd to an existing workbench by id
+./worktree-bench wb-123
+
+# create a fresh workbench without opening the selector
+./worktree-bench --new --type medium
+
+# one-shot init_cmd override (`-` or empty disables init for this action)
+./worktree-bench --init-cmd "pnpm install" wb-123
+./worktree-bench --new --type small --init-cmd -
+```
+
 ### Create a workbench
 ```bash
 ./worktree-bench create
@@ -141,6 +155,10 @@ Settings and pool data are stored in the repo root under `.worktree-bench/`:
 
 Defaults are inferred from lockfiles and `package.json` (when available).
 Auto-generated workbench names use `{worktree_name_prefix}{size-short}-{number}`, where size short is `l`, `m`, or `s`.
+
+
+## Pi extension
+A pi extension is provided at `~/.pi/agent/extensions/wtb.ts`. After `/reload`, use `/wtb` to open a worktree-bench selector inside pi. It shows the same workbench labels and status descriptions as the TUI, asks whether to run `gnm` (`~/tools/gnm`) in the selected worktree, then runs `worktree-bench` in no-TUI mode with the selected workbench id or `--new --type <type>`. Choosing gnm passes `--init-cmd "gnm"`; choosing no passes `--init-cmd "-"` so no configured init command runs. Any arguments passed to `/wtb` are still forwarded to `worktree-bench`.
 
 ## Development
 ```bash

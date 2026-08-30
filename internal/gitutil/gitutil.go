@@ -41,9 +41,23 @@ func MainWorktreeRoot(path string) (string, error) {
 }
 
 func Branch(path string) (string, error) {
-	out, err := exec.Command("git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	return BranchOrShortHEAD(path)
+}
+
+func BranchOrShortHEAD(path string) (string, error) {
+	args := []string{"-C", path, "symbolic-ref", "--short", "-q", "HEAD"}
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err == nil {
+		return strings.TrimSpace(string(out)), nil
+	}
+	args = []string{"-C", path, "rev-parse", "--short", "HEAD"}
+	out, err = exec.Command("git", args...).CombinedOutput()
 	if err != nil {
-		return "", gitOutputError("rev-parse --abbrev-ref HEAD", err)
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return "", fmt.Errorf("git %s: %s", strings.Join(args[2:], " "), detail)
+		}
+		return "", fmt.Errorf("git %s: %w", strings.Join(args[2:], " "), err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -65,9 +79,13 @@ func StatusNumstat(path string, staged bool) (int, int, error) {
 	if staged {
 		args = append(args, "--cached")
 	}
-	out, err := exec.Command("git", args...).Output()
+	out, err := exec.Command("git", args...).CombinedOutput()
 	if err != nil {
-		return 0, 0, gitOutputError(strings.Join(args[2:], " "), err)
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return 0, 0, fmt.Errorf("git %s: %s", strings.Join(args[2:], " "), detail)
+		}
+		return 0, 0, fmt.Errorf("git %s: %w", strings.Join(args[2:], " "), err)
 	}
 	added, deleted := parseNumstat(out)
 	return added, deleted, nil
@@ -213,25 +231,35 @@ func WorktreeRemove(repoRoot, path string, force bool) error {
 
 // LastCommitTime returns the author date of the most recent commit in the repo at path.
 func LastCommitTime(path string) (time.Time, error) {
-	out, err := exec.Command("git", "-C", path, "log", "-1", "--format=%aI").Output()
-	if err != nil {
-		return time.Time{}, gitOutputError("log", err)
-	}
-	return time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
+	t, _, err := LastCommitInfo(path)
+	return t, err
 }
 
 // LastCommitSubject returns the first line of the most recent commit message.
 func LastCommitSubject(path string) (string, error) {
-	args := []string{"-C", path, "log", "-1", "--format=%s"}
+	_, subject, err := LastCommitInfo(path)
+	return subject, err
+}
+
+func LastCommitInfo(path string) (time.Time, string, error) {
+	args := []string{"-C", path, "log", "-1", "--format=%aI%x00%s"}
 	out, err := exec.Command("git", args...).CombinedOutput()
 	if err != nil {
 		detail := strings.TrimSpace(string(out))
 		if detail != "" {
-			return "", fmt.Errorf("git %s: %s", strings.Join(args[2:], " "), detail)
+			return time.Time{}, "", fmt.Errorf("git %s: %s", strings.Join(args[2:], " "), detail)
 		}
-		return "", fmt.Errorf("git %s: %w", strings.Join(args[2:], " "), err)
+		return time.Time{}, "", fmt.Errorf("git %s: %w", strings.Join(args[2:], " "), err)
 	}
-	return firstLine(strings.TrimSpace(string(out))), nil
+	parts := strings.SplitN(strings.TrimSpace(string(out)), "\x00", 2)
+	if len(parts) != 2 {
+		return time.Time{}, "", fmt.Errorf("git log: unexpected output")
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(parts[0]))
+	if err != nil {
+		return time.Time{}, "", err
+	}
+	return t, firstLine(parts[1]), nil
 }
 
 // BranchDescription returns the configured branch description, if any.

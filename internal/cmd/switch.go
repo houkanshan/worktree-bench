@@ -52,6 +52,7 @@ func newSwitchCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			invalidateStatusCacheForPaths(repoRoot, pool, repoRoot, selected.Path)
 
 			return emitDirective(cmd, targetPath)
 		},

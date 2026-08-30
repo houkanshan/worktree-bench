@@ -203,6 +203,20 @@ func runCommand(dir, command string) error {
 	return nil
 }
 
+// RunInitCmd runs the init command in the given directory with the terminal attached.
+func RunInitCmd(dir, command string) error {
+	tracef("RunInitCmd: dir=%s cmd=%q", dir, command)
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = dir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s: %w", command, err)
+	}
+	return nil
+}
+
 func startCommand(dir, command string) (int, error) {
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = dir

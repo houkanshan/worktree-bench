@@ -8,6 +8,7 @@ import (
 
 	"worktree-bench/internal/config"
 	"worktree-bench/internal/gitutil"
+	"worktree-bench/internal/statuscache"
 )
 
 type BenchStatus struct {
@@ -30,52 +31,124 @@ type BenchStatus struct {
 // 	URL    string `json:"url"`
 // }
 
-func LoadBenchStatuses(benches []config.Workbench) map[string]BenchStatus {
-	statuses := make(map[string]BenchStatus, len(benches))
-	for _, bench := range benches {
-		status := BenchStatus{}
+type StatusOptions struct {
+	UseCache bool
+	Fast     bool
+}
 
-		// Check if the worktree directory still exists on disk.
-		if _, err := os.Stat(bench.Path); os.IsNotExist(err) {
-			status.DirMissing = true
-			statuses[bench.ID] = status
+func LoadBenchStatuses(benches []config.Workbench) map[string]BenchStatus {
+	return loadBenchStatuses(benches, StatusOptions{})
+}
+
+func LoadBenchStatusesCached(repoRoot string, benches []config.Workbench, opts StatusOptions) map[string]BenchStatus {
+	if !opts.UseCache {
+		return loadBenchStatuses(benches, opts)
+	}
+	start := time.Now()
+	cache, _ := statuscache.Load(repoRoot)
+	statuses := make(map[string]BenchStatus, len(benches))
+	updated := false
+	hits := 0
+	misses := 0
+	for _, bench := range benches {
+		fingerprint, status := benchFingerprint(bench)
+		if cached, ok := statuscache.Get(cache, bench, fingerprint); ok {
+			statuses[bench.ID] = fromCachedStatus(cached)
+			hits++
 			continue
 		}
+		misses++
+		if fingerprint == "missing" {
+			statuscache.Put(&cache, bench, fingerprint, toCachedStatus(status))
+			statuses[bench.ID] = status
+			updated = true
+			continue
+		}
+		slowStart := time.Now()
+		status = loadBenchStatus(bench, opts)
+		tracef("status bench=%s slow_path=%s", bench.ID, time.Since(slowStart))
+		statuscache.Put(&cache, bench, fingerprint, toCachedStatus(status))
+		statuses[bench.ID] = status
+		updated = true
+	}
+	if updated {
+		_ = statuscache.Save(repoRoot, cache)
+	}
+	tracef("status total=%s hits=%d misses=%d updated=%t", time.Since(start), hits, misses, updated)
+	return statuses
+}
 
-		branch, err := gitutil.Branch(bench.Path)
-		if err == nil {
-			status.Branch = branch
-			if branch != "" && branch != "HEAD" {
-				if desc, err := gitutil.BranchDescription(bench.Path, branch); err == nil {
-					status.Description = desc
-				}
+func loadBenchStatuses(benches []config.Workbench, opts StatusOptions) map[string]BenchStatus {
+	statuses := make(map[string]BenchStatus, len(benches))
+	for _, bench := range benches {
+		statuses[bench.ID] = loadBenchStatus(bench, opts)
+	}
+	return statuses
+}
+
+func loadBenchStatus(bench config.Workbench, opts StatusOptions) BenchStatus {
+	status := BenchStatus{}
+	if _, err := os.Stat(bench.Path); os.IsNotExist(err) {
+		status.DirMissing = true
+		return status
+	}
+	branch, err := gitutil.BranchOrShortHEAD(bench.Path)
+	if err == nil {
+		status.Branch = branch
+		if branch != "" && branch != "HEAD" {
+			if desc, err := gitutil.BranchDescription(bench.Path, branch); err == nil {
+				status.Description = desc
 			}
 		}
-
+	}
+	if t, subject, err := gitutil.LastCommitInfo(bench.Path); err == nil {
+		status.LastCommit = t
 		if status.Description == "" {
-			if subject, err := gitutil.LastCommitSubject(bench.Path); err == nil {
-				status.Description = subject
-			}
+			status.Description = subject
 		}
-
+	}
+	if !opts.Fast {
 		changes, err := gitutil.DiffLines(bench.Path)
 		status.ChangesLines = changes
 		status.ChangesErr = err
-
-		if t, err := gitutil.LastCommitTime(bench.Path); err == nil {
-			status.LastCommit = t
-		}
-
-		// GitHub PR lookup commented out — too slow.
-		// if pr, err := ghPRView(bench.Path); err == nil {
-		// 	status.PRNumber = pr.Number
-		// 	status.PRTitle = pr.Title
-		// 	status.PRURL = pr.URL
-		// }
-
-		statuses[bench.ID] = status
 	}
-	return statuses
+	return status
+}
+
+func benchFingerprint(bench config.Workbench) (string, BenchStatus) {
+	status := BenchStatus{}
+	if _, err := os.Stat(bench.Path); os.IsNotExist(err) {
+		status.DirMissing = true
+		return "missing", status
+	}
+	fingerprint, err := gitutil.WorktreeFingerprint(bench.Path)
+	if err != nil {
+		return "error:" + err.Error(), status
+	}
+	return fingerprint + ":" + bench.ID + ":" + bench.Type + ":" + bench.Name, status
+}
+
+func toCachedStatus(status BenchStatus) statuscache.BenchStatus {
+	cached := statuscache.BenchStatus{DirMissing: status.DirMissing, Description: status.Description, Branch: status.Branch, LastCommit: status.LastCommit, ChangesLines: status.ChangesLines}
+	if status.ChangesErr != nil {
+		cached.ChangesErr = status.ChangesErr.Error()
+	}
+	return cached
+}
+
+func fromCachedStatus(status statuscache.BenchStatus) BenchStatus {
+	cached := BenchStatus{DirMissing: status.DirMissing, Description: status.Description, Branch: status.Branch, LastCommit: status.LastCommit, ChangesLines: status.ChangesLines}
+	if status.ChangesErr != "" {
+		cached.ChangesErr = fmt.Errorf("%s", status.ChangesErr)
+	}
+	return cached
+}
+
+func tracef(format string, args ...any) {
+	if os.Getenv("WTB_TRACE") == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
 
 // ghPRView commented out — too slow.

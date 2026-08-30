@@ -53,6 +53,10 @@ func newAdoptCommand() *cobra.Command {
 			if err := config.SavePool(repoRoot, pool); err != nil {
 				return err
 			}
+			if adopted != nil {
+				invalidateStatusCacheEntries(repoRoot, adopted.ID)
+				invalidateStatusCachePaths(repoRoot, adopted.Path)
+			}
 
 			if adopted != nil {
 				fmt.Printf("Adopted workbench %s\n", adopted.Name)

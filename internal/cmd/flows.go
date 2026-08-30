@@ -14,10 +14,12 @@ import (
 )
 
 type createFlowResult struct {
-	pool       config.Pool
-	changed    bool
-	message    string
-	targetPath string
+	pool         config.Pool
+	changed      bool
+	message      string
+	targetPath   string
+	touchedIDs   []string
+	touchedPaths []string
 }
 
 func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) (createFlowResult, error) {
@@ -41,8 +43,13 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 			BaseBranch:  baseBranch,
 			RunInit:     strings.TrimSpace(settings.InitCmd) != "",
 		}
-		updated, _, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
-		return createFlowResult{pool: updated}, err
+		updated, touched, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
+		flow := createFlowResult{pool: updated, changed: touched != nil}
+		if touched != nil {
+			flow.touchedIDs = []string{touched.ID}
+			flow.touchedPaths = []string{touched.Path}
+		}
+		return flow, err
 	}
 
 	if bench.FindWorkbenchByPath(pool, repoRoot) == nil {
@@ -77,7 +84,12 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 			if adopted != nil {
 				message = fmt.Sprintf("Adopted workbench %s", adopted.Name)
 			}
-			return createFlowResult{pool: updated, changed: adopted != nil, message: message}, err
+			flow := createFlowResult{pool: updated, changed: adopted != nil, message: message}
+			if adopted != nil {
+				flow.touchedIDs = []string{adopted.ID}
+				flow.touchedPaths = []string{adopted.Path}
+			}
+			return flow, err
 		}
 	}
 
@@ -99,7 +111,12 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 		message = fmt.Sprintf("Created workbench %s at %s", created.Name, created.Path)
 		targetPath = created.Path
 	}
-	return createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}, err
+	flow := createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}
+	if created != nil {
+		flow.touchedIDs = []string{created.ID}
+		flow.touchedPaths = []string{created.Path}
+	}
+	return flow, err
 }
 
 func runCreateFromDashboard(repoRoot string, settings config.Settings, pool config.Pool, benchType string) (createFlowResult, error) {
@@ -136,7 +153,12 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 			if adopted != nil {
 				message = fmt.Sprintf("Adopted workbench %s", adopted.Name)
 			}
-			return createFlowResult{pool: updated, changed: adopted != nil, message: message}, err
+			flow := createFlowResult{pool: updated, changed: adopted != nil, message: message}
+			if adopted != nil {
+				flow.touchedIDs = []string{adopted.ID}
+				flow.touchedPaths = []string{adopted.Path}
+			}
+			return flow, err
 		}
 	}
 
@@ -166,7 +188,12 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 		message = fmt.Sprintf("Created workbench %s at %s", created.Name, created.Path)
 		targetPath = created.Path
 	}
-	return createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}, err
+	flow := createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}
+	if created != nil {
+		flow.touchedIDs = []string{created.ID}
+		flow.touchedPaths = []string{created.Path}
+	}
+	return flow, err
 }
 
 func runDeleteFlow(repoRoot string, pool config.Pool, benchID string, force bool) (config.Pool, string, error) {

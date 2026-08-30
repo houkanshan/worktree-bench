@@ -36,6 +36,8 @@ func newCreateCommand() *cobra.Command {
 				if err := config.SavePool(repoRoot, flow.pool); err != nil {
 					return err
 				}
+				invalidateStatusCacheEntries(repoRoot, flow.touchedIDs...)
+				invalidateStatusCachePaths(repoRoot, flow.touchedPaths...)
 			}
 			if flow.message != "" {
 				fmt.Fprintln(os.Stdout, flow.message)

@@ -44,6 +44,7 @@ func newDeleteCommand() *cobra.Command {
 			if err := config.SavePool(repoRoot, updated); err != nil {
 				return err
 			}
+			invalidateStatusCacheEntries(repoRoot, result.BenchID)
 			if message != "" {
 				fmt.Println(message)
 			}
