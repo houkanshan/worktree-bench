@@ -61,6 +61,12 @@ func EnsureSettings(repoRoot string) (config.Settings, error) {
 	if err != nil {
 		return config.Settings{}, err
 	}
+	if !filepath.IsAbs(settings.WorktreesDir) {
+		settings.WorktreesDir, err = filepath.Abs(settings.WorktreesDir)
+		if err != nil {
+			return config.Settings{}, err
+		}
+	}
 	detectRoot := repoRoot
 	if mainRoot, err := gitutil.MainWorktreeRoot(repoRoot); err == nil && mainRoot != "" {
 		detectRoot = mainRoot
