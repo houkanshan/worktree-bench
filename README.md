@@ -129,9 +129,18 @@ If the current worktree is not registered, you'll be asked whether to adopt it o
 
 # include fresh Git/PR safety data for automatic selection
 ./worktree-bench status --json --selection
+
+# constrain command execution to an authorized filesystem root
+./worktree-bench status --json --selection --allowed-root /path/to/worktrees
 ```
 
-Selection status adds a `git` object to every bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or associated with a merged pull request. Dirty worktrees, unpushed commits, and open, closed, missing, or unknown pull requests are never safe. Selection checks bypass the display-status cache.
+Selection status adds a `git` object to every authorized bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or exactly matches the head of a merged pull request. Dirty worktrees, unpushed commits, and open, closed, missing, stale, or unknown pull requests are never safe. Selection checks bypass the display-status cache. Repeat `--allowed-root` when a caller has multiple authorized roots; benches outside those roots remain listed without a `git` object.
+
+Automation can require a second fresh check immediately before initialization:
+
+```bash
+./worktree-bench wb-123 --require-reusable --allowed-root /path/to/worktrees --init-cmd gnm --json
+```
 
 ### Adopt current worktree
 ```bash

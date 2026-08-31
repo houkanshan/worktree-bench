@@ -26,12 +26,14 @@ type dashboardOptions struct {
 }
 
 type directSelection struct {
-	BenchID   string
-	CreateNew bool
-	Type      string
-	Name      string
-	Base      string
-	JSON      bool
+	BenchID         string
+	CreateNew       bool
+	Type            string
+	Name            string
+	Base            string
+	JSON            bool
+	RequireReusable bool
+	AllowedRoots    []string
 }
 
 type selectionJSON struct {
@@ -50,6 +52,8 @@ func addNoTUISelectionFlags(cmd *cobra.Command) {
 	cmd.Flags().String("base", baseBranchMaster, "base branch for --new (master, current, or a branch name)")
 	cmd.Flags().String("init-cmd", "", "override init_cmd for this no-TUI action (pass '-' or an empty value to disable)")
 	cmd.Flags().String("directive-file", "", "write cd directives to a file (for shell wrappers)")
+	cmd.Flags().Bool("require-reusable", false, "fail unless the selected existing workbench is freshly classified safe")
+	cmd.Flags().StringArray("allowed-root", nil, "limit direct selection to paths under these roots")
 }
 
 func runDashboard(cmd *cobra.Command, args []string) error {
@@ -169,6 +173,8 @@ func normalizeInitCmd(value string) string {
 func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, bool, error) {
 	createNew, _ := boolFlag(cmd, "new")
 	jsonOutput, _ := boolFlag(cmd, "json")
+	requireReusable, _ := boolFlag(cmd, "require-reusable")
+	allowedRoots, _ := cmd.Flags().GetStringArray("allowed-root")
 	if createNew && len(args) > 0 {
 		return directSelection{}, false, fmt.Errorf("workbench id cannot be combined with --new")
 	}
@@ -176,8 +182,8 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 		return directSelection{}, false, fmt.Errorf("expected at most one workbench id")
 	}
 	if !createNew && len(args) == 0 {
-		if jsonOutput {
-			return directSelection{}, false, fmt.Errorf("--json requires --new or a workbench id")
+		if jsonOutput || requireReusable || len(allowedRoots) > 0 {
+			return directSelection{}, false, fmt.Errorf("--json, --require-reusable, and --allowed-root require --new or a workbench id")
 		}
 		return directSelection{}, false, nil
 	}
@@ -197,7 +203,18 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 		base = baseBranchMaster
 	}
 
-	direct := directSelection{CreateNew: createNew, Type: benchType, Name: name, Base: base, JSON: jsonOutput}
+	if createNew && requireReusable {
+		return directSelection{}, false, fmt.Errorf("--require-reusable applies only to an existing workbench")
+	}
+	direct := directSelection{
+		CreateNew:       createNew,
+		Type:            benchType,
+		Name:            name,
+		Base:            base,
+		JSON:            jsonOutput,
+		RequireReusable: requireReusable,
+		AllowedRoots:    allowedRoots,
+	}
 	if len(args) == 1 {
 		direct.BenchID = strings.TrimSpace(args[0])
 		if direct.BenchID == "" {
@@ -209,16 +226,20 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 
 func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Settings, pool config.Pool, opts dashboardOptions, direct directSelection) error {
 	if direct.CreateNew {
+		if err := requireAllowedPath(settings.WorktreesDir, direct.AllowedRoots); err != nil {
+			return err
+		}
 		baseBranch, err := resolveBaseBranch(repoRoot, direct.Base)
 		if err != nil {
 			return err
 		}
 		input := bench.CreateInput{
-			Type:        direct.Type,
-			Name:        direct.Name,
-			BaseBranch:  baseBranch,
-			RunInit:     strings.TrimSpace(settings.InitCmd) != "",
-			QuietOutput: direct.JSON,
+			Type:         direct.Type,
+			Name:         direct.Name,
+			BaseBranch:   baseBranch,
+			RunInit:      strings.TrimSpace(settings.InitCmd) != "",
+			QuietOutput:  direct.JSON,
+			ValidatePath: func(candidate string) error { return requireAllowedPath(candidate, direct.AllowedRoots) },
 		}
 		updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 		if err != nil {
@@ -249,6 +270,15 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 	selected := findBenchByID(pool, direct.BenchID)
 	if selected == nil {
 		return fmt.Errorf("workbench %q not found", direct.BenchID)
+	}
+	if err := requireAllowedPath(selected.Path, direct.AllowedRoots); err != nil {
+		return err
+	}
+	if direct.RequireReusable {
+		status := gitutil.InspectReuseStatus(selected.Path)
+		if status.Severity != "safe" {
+			return fmt.Errorf("workbench %q is not reusable: %s", selected.Name, status.Label)
+		}
 	}
 	tracef("direct-switch: bench=%s path=%s initCmd=%q swapOnSelect=%t", selected.Name, selected.Path, settings.InitCmd, opts.swapOnSelect)
 	if strings.TrimSpace(settings.InitCmd) != "" {

@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,6 +39,34 @@ func initializedRepo(t *testing.T) string {
 	gitTest(t, repo, "add", "README.md")
 	gitTest(t, repo, "commit", "-m", "base")
 	return repo
+}
+
+func TestCreateWorkbenchValidatesDerivedPathBeforeFilesystemChanges(t *testing.T) {
+	repo := initializedRepo(t)
+	root := filepath.Dir(repo)
+	worktreesDir := filepath.Join(root, "worktrees")
+	outside := filepath.Join(root, "outside")
+	settings := config.Settings{WorktreesDir: worktreesDir, BranchPrefix: "bench/"}
+	pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir}
+	validated := ""
+	_, created, err := CreateWorkbench(repo, settings, pool, CreateInput{
+		Type:       config.TypeSmall,
+		Name:       "../outside",
+		BaseBranch: "master",
+		ValidatePath: func(candidate string) error {
+			validated = filepath.Clean(candidate)
+			return errors.New("outside allowed roots")
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "outside allowed roots") || created != nil {
+		t.Fatalf("expected validation failure, got created=%+v err=%v", created, err)
+	}
+	if validated != outside {
+		t.Fatalf("validated %q, want %q", validated, outside)
+	}
+	if _, err := os.Stat(worktreesDir); !os.IsNotExist(err) {
+		t.Fatalf("worktrees directory changed before validation: %v", err)
+	}
 }
 
 func TestCreateWorkbenchFailureRemovesWorktreeAndGeneratedBranch(t *testing.T) {

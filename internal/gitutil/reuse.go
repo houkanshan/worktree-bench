@@ -1,6 +1,7 @@
 package gitutil
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,14 +10,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 // ReuseStatus is the fresh, machine-readable safety status used when selecting
 // a workbench for reuse. Safe means that discarding the branch cannot lose
-// local work: HEAD is on the default branch or its PR has been merged.
+// local work: HEAD is on the default branch or exactly matches a merged PR head.
 type ReuseStatus struct {
-	State    string         `json:"state"`
+	Kind     string         `json:"kind"`
 	Severity string         `json:"severity"`
 	Label    string         `json:"label"`
 	Branch   string         `json:"branch,omitempty"`
@@ -31,16 +33,19 @@ type ReusePRStatus struct {
 }
 
 type branchPRStatus struct {
-	Number any    `json:"number"`
-	State  string `json:"state"`
-	Error  string `json:"error"`
+	Number     any    `json:"number"`
+	State      string `json:"state"`
+	Error      string `json:"error"`
+	HeadSHA    string `json:"headSha"`
+	HeadRefOID string `json:"headRefOid"`
+	Stale      bool   `json:"stale"`
 }
 
 func boolPtr(value bool) *bool { return &value }
 func intPtr(value int) *int    { return &value }
 
 func reuseStatus(state, severity, label, branch string, dirty *bool, unpushed *int, pr *ReusePRStatus) ReuseStatus {
-	return ReuseStatus{State: state, Severity: severity, Label: label, Branch: branch, Dirty: dirty, Unpushed: unpushed, PR: pr}
+	return ReuseStatus{Kind: state, Severity: severity, Label: label, Branch: branch, Dirty: dirty, Unpushed: unpushed, PR: pr}
 }
 
 // InspectReuseStatus performs fresh checks. It deliberately does not use the
@@ -54,9 +59,16 @@ func InspectReuseStatus(path string) ReuseStatus {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		commandArgs := append([]string{"-C", path}, args...)
-		out, err := exec.CommandContext(ctx, "git", commandArgs...).CombinedOutput()
+		cmd := exec.CommandContext(ctx, "git", commandArgs...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
 		if err != nil {
-			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
+			detail := strings.TrimSpace(stderr.String())
+			if detail != "" {
+				return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), detail)
+			}
+			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
@@ -73,6 +85,30 @@ func InspectReuseStatus(path string) ReuseStatus {
 	if err != nil || branch == "" {
 		return reuseStatus("unknown", "muted", "unknown", "", boolPtr(false), nil, nil)
 	}
+	head, err := runGit("rev-parse", "HEAD")
+	if err != nil {
+		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), nil, nil)
+	}
+	confirmSafe := func(candidate ReuseStatus) ReuseStatus {
+		finalHead, headErr := runGit("rev-parse", "HEAD")
+		finalStatus, statusErr := runGit("status", "--porcelain")
+		if headErr != nil || statusErr != nil || finalHead != head || finalStatus != "" {
+			return reuseStatus("unknown", "muted", "unknown", branch, nil, nil, nil)
+		}
+		return candidate
+	}
+
+	var unpushed *int
+	upstreamKnown := false
+	if output, err := runGit("rev-list", "--count", "@{upstream}..HEAD"); err == nil {
+		if count, parseErr := strconv.Atoi(output); parseErr == nil {
+			unpushed = intPtr(count)
+			upstreamKnown = true
+			if count > 0 {
+				return reuseStatus("unpushed", "warning", fmt.Sprintf("%d unpushed", count), branch, boolPtr(false), unpushed, nil)
+			}
+		}
+	}
 
 	defaultRefs := []string{"refs/heads/main", "refs/heads/master", "refs/remotes/origin/main", "refs/remotes/origin/master"}
 	if remoteDefault, err := runGit("symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil && remoteDefault != "" {
@@ -80,16 +116,15 @@ func InspectReuseStatus(path string) ReuseStatus {
 	}
 	containsArgs := append([]string{"for-each-ref", "--contains=HEAD", "--format=%(refname)"}, defaultRefs...)
 	if containing, err := runGit(containsArgs...); err == nil && containing != "" {
-		return reuseStatus("no-change", "safe", "no change", branch, boolPtr(false), intPtr(0), nil)
-	}
-
-	var unpushed *int
-	if output, err := runGit("rev-list", "--count", "@{upstream}..HEAD"); err == nil {
-		if count, parseErr := strconv.Atoi(output); parseErr == nil {
-			unpushed = intPtr(count)
-			if count > 0 {
-				return reuseStatus("unpushed", "warning", fmt.Sprintf("%d unpushed", count), branch, boolPtr(false), unpushed, nil)
+		remotePreserved := false
+		for _, ref := range strings.Split(containing, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(ref), "refs/remotes/") {
+				remotePreserved = true
+				break
 			}
+		}
+		if upstreamKnown || remotePreserved {
+			return confirmSafe(reuseStatus("no-change", "safe", "no change", branch, boolPtr(false), unpushed, nil))
 		}
 	}
 
@@ -97,16 +132,12 @@ func InspectReuseStatus(path string) ReuseStatus {
 	if err != nil {
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(home, "tools", "branch-pr-status"), branch)
-	cmd.Dir = path
-	out, err := cmd.CombinedOutput()
+	out, err := runBranchPRStatus(home, path, branch)
 	if err != nil {
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
 	var payload branchPRStatus
-	if err := json.Unmarshal(out, &payload); err != nil || payload.Error != "" {
+	if err := json.Unmarshal(out, &payload); err != nil || payload.Error != "" || payload.Stale || payload.HeadSHA != head {
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
 	state := strings.ToLower(payload.State)
@@ -117,10 +148,52 @@ func InspectReuseStatus(path string) ReuseStatus {
 	label := fmt.Sprintf("#%v %s", payload.Number, state)
 	switch state {
 	case "merged":
-		return reuseStatus("pr-merged", "safe", label, branch, boolPtr(false), unpushed, pr)
+		if payload.HeadRefOID != head {
+			return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
+		}
+		return confirmSafe(reuseStatus("pr-merged", "safe", label, branch, boolPtr(false), unpushed, pr))
 	case "closed":
 		return reuseStatus("pr-closed", "warning", label, branch, boolPtr(false), unpushed, pr)
-	default:
+	case "open":
 		return reuseStatus("pr-open", "warning", fmt.Sprintf("#%v open", payload.Number), branch, boolPtr(false), unpushed, pr)
+	default:
+		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
+}
+
+func runBranchPRStatus(home, worktree, branch string) ([]byte, error) {
+	cacheRoot := os.Getenv("XDG_CACHE_HOME")
+	if cacheRoot == "" {
+		cacheRoot = filepath.Join(home, ".cache")
+	}
+	lockDir := filepath.Join(cacheRoot, "branch-pr-status")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create branch-pr-status lock directory: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(lockDir, "wtb.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open branch-pr-status lock: %w", err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, fmt.Errorf("lock branch-pr-status cache: %w", err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	// Start the helper timeout only after this process owns the cross-process lock.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(home, "tools", "branch-pr-status"), branch, "--wait")
+	cmd.Dir = worktree
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return nil, fmt.Errorf("branch-pr-status: %s", detail)
+		}
+		return nil, fmt.Errorf("branch-pr-status: %w", err)
+	}
+	return out, nil
 }

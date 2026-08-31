@@ -34,11 +34,12 @@ func newStatusCommand() *cobra.Command {
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			fast, _ := cmd.Flags().GetBool("fast")
 			selection, _ := cmd.Flags().GetBool("selection")
+			allowedRoots, _ := cmd.Flags().GetStringArray("allowed-root")
 			if selection && !jsonOutput {
 				return fmt.Errorf("--selection requires --json")
 			}
 			if jsonOutput {
-				return writeStatusJSON(repoRoot, settings, pool, fast, selection)
+				return writeStatusJSON(repoRoot, settings, pool, fast, selection, allowedRoots)
 			}
 
 			return ui.RunStatus(pool.Benches)
@@ -47,6 +48,7 @@ func newStatusCommand() *cobra.Command {
 	cmd.Flags().Bool("json", false, "print workbench status as JSON")
 	cmd.Flags().Bool("fast", false, "reuse cached status for JSON output and skip expensive diff on cache misses")
 	cmd.Flags().Bool("selection", false, "include fresh reusable-safety status in JSON output")
+	cmd.Flags().StringArray("allowed-root", nil, "limit selection checks to paths under these roots")
 	return cmd
 }
 
@@ -66,27 +68,36 @@ type statusBenchJSON struct {
 	Git         *gitutil.ReuseStatus `json:"git,omitempty"`
 }
 
-func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool, fast, selection bool) error {
+func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool, fast, selection bool, allowedRoots []string) error {
+	statusBenches := pool.Benches
+	if selection {
+		var err error
+		statusBenches, err = filterAllowedBenches(pool.Benches, allowedRoots)
+		if err != nil {
+			return err
+		}
+	}
 	var statuses map[string]ui.BenchStatus
 	if fast || selection {
-		statuses = ui.LoadBenchStatusesCached(repoRoot, pool.Benches, ui.StatusOptions{UseCache: true, Fast: true})
+		statuses = ui.LoadBenchStatusesCached(repoRoot, statusBenches, ui.StatusOptions{UseCache: true, Fast: true})
 	} else {
-		statuses = ui.LoadBenchStatuses(pool.Benches)
+		statuses = ui.LoadBenchStatuses(statusBenches)
 	}
 	var reuseStatuses map[string]gitutil.ReuseStatus
 	if selection {
-		reuseStatuses = loadReuseStatuses(pool.Benches)
+		reuseStatuses = loadReuseStatuses(statusBenches)
 	}
 	benches := make([]statusBenchJSON, 0, len(pool.Benches))
 	for _, workbench := range pool.Benches {
-		status := statuses[workbench.ID]
 		benchJSON := statusBenchJSON{
-			ID:          workbench.ID,
-			Name:        workbench.Name,
-			Type:        workbench.Type,
-			Path:        workbench.Path,
-			Description: ui.FormatStatusLine(status),
-			DirMissing:  status.DirMissing,
+			ID:   workbench.ID,
+			Name: workbench.Name,
+			Type: workbench.Type,
+			Path: workbench.Path,
+		}
+		if status, ok := statuses[workbench.ID]; ok {
+			benchJSON.Description = ui.FormatStatusLine(status)
+			benchJSON.DirMissing = status.DirMissing
 		}
 		if reuse, ok := reuseStatuses[workbench.ID]; ok {
 			benchJSON.Git = &reuse
@@ -100,15 +111,29 @@ func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool
 	})
 }
 
-func loadReuseStatuses(benches []config.Workbench) map[string]gitutil.ReuseStatus {
+func filterAllowedBenches(benches []config.Workbench, allowedRoots []string) ([]config.Workbench, error) {
+	authorized := make([]config.Workbench, 0, len(benches))
+	for _, workbench := range benches {
+		allowed, err := pathAllowed(workbench.Path, allowedRoots)
+		if err != nil {
+			return nil, err
+		}
+		if allowed {
+			authorized = append(authorized, workbench)
+		}
+	}
+	return authorized, nil
+}
+
+func loadReuseStatuses(authorized []config.Workbench) map[string]gitutil.ReuseStatus {
 	const workers = 4
-	result := make(map[string]gitutil.ReuseStatus, len(benches))
+	result := make(map[string]gitutil.ReuseStatus, len(authorized))
 	jobs := make(chan config.Workbench)
 	var mutex sync.Mutex
 	var group sync.WaitGroup
 	workerCount := workers
-	if len(benches) < workerCount {
-		workerCount = len(benches)
+	if len(authorized) < workerCount {
+		workerCount = len(authorized)
 	}
 	group.Add(workerCount)
 	for range workerCount {
@@ -122,7 +147,7 @@ func loadReuseStatuses(benches []config.Workbench) map[string]gitutil.ReuseStatu
 			}
 		}()
 	}
-	for _, workbench := range benches {
+	for _, workbench := range authorized {
 		jobs <- workbench
 	}
 	close(jobs)

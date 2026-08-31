@@ -105,6 +105,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		if bench == nil {
 			return pool, nil, fmt.Errorf("workbench not found")
 		}
+		if input.ValidatePath != nil {
+			if err := input.ValidatePath(bench.Path); err != nil {
+				return pool, nil, err
+			}
+		}
 		if err := gitutil.Fetch(bench.Path); err != nil {
 			return pool, nil, err
 		}
@@ -123,6 +128,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		input.Name = nextName(pool, benchType, settings.WorktreeNamePrefix)
 	}
 	benchPath := filepath.Join(settings.WorktreesDir, input.Name)
+	if input.ValidatePath != nil {
+		if err := input.ValidatePath(benchPath); err != nil {
+			return pool, nil, err
+		}
+	}
 	if err := os.MkdirAll(settings.WorktreesDir, 0o755); err != nil {
 		return pool, nil, err
 	}
@@ -472,13 +482,14 @@ func runGit(path string, args ...string) error {
 
 // CreateInput describes a create action.
 type CreateInput struct {
-	Type        string
-	UseExisting bool
-	BenchID     string
-	Name        string
-	BaseBranch  string
-	RunInit     bool
-	QuietOutput bool
+	Type         string
+	UseExisting  bool
+	BenchID      string
+	Name         string
+	BaseBranch   string
+	RunInit      bool
+	QuietOutput  bool
+	ValidatePath func(string) error
 }
 
 // AdoptInput describes adopting the current worktree into the pool.
