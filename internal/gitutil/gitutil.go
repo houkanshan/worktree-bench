@@ -147,13 +147,85 @@ func ResolvePrimaryBranch(path string) (string, error) {
 }
 
 func CheckoutBranch(path, branch string) error {
-	if err := runGit(path, "checkout", branch); err == nil {
-		return nil
+	branch = strings.TrimSpace(branch)
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("invalid branch %q", branch)
 	}
-	if err := runGit(path, "checkout", "-b", branch, "origin/"+branch); err == nil {
-		return nil
+	if err := runGit(path, "check-ref-format", "--branch", branch); err != nil {
+		return err
 	}
-	return runGit(path, "checkout", "-b", branch)
+
+	localRef := "refs/heads/" + branch
+	local, err := gitRefExists(path, localRef)
+	if err != nil {
+		return err
+	}
+	if local {
+		return runGit(path, "checkout", branch)
+	}
+
+	remotes, err := checkoutRemotes(path)
+	if err != nil {
+		return err
+	}
+	for _, remote := range remotes {
+		exists, err := remoteBranchExists(path, remote, branch)
+		if err != nil || !exists {
+			continue
+		}
+		remoteRef := "refs/remotes/" + remote + "/" + branch
+		refspec := "+refs/heads/" + branch + ":" + remoteRef
+		if err := runGit(path, "fetch", remote, refspec); err != nil {
+			return err
+		}
+		return runGit(path, "checkout", "-b", branch, "--track", remote+"/"+branch)
+	}
+	return fmt.Errorf("branch %q not found", branch)
+}
+
+func checkoutRemotes(path string) ([]string, error) {
+	args := []string{"-C", path, "remote"}
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err != nil {
+		return nil, gitOutputError("remote", err)
+	}
+	seen := make(map[string]bool)
+	remotes := make([]string, 0)
+	add := func(remote string) {
+		remote = strings.TrimSpace(remote)
+		if remote != "" && !seen[remote] {
+			seen[remote] = true
+			remotes = append(remotes, remote)
+		}
+	}
+	upstreamArgs := []string{"-C", path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"}
+	if upstream, upstreamErr := exec.Command("git", upstreamArgs...).CombinedOutput(); upstreamErr == nil {
+		if remote, _, ok := strings.Cut(strings.TrimSpace(string(upstream)), "/"); ok {
+			add(remote)
+		}
+	}
+	add("origin")
+	for _, remote := range strings.Fields(string(out)) {
+		add(remote)
+	}
+	return remotes, nil
+}
+
+func remoteBranchExists(path, remote, branch string) (bool, error) {
+	args := []string{"-C", path, "ls-remote", "--exit-code", "--heads", remote, "refs/heads/" + branch}
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err == nil {
+		return strings.TrimSpace(string(out)) != "", nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+		return false, nil
+	}
+	detail := strings.TrimSpace(string(out))
+	if detail != "" {
+		return false, fmt.Errorf("git ls-remote --heads %s: %s", remote, detail)
+	}
+	return false, fmt.Errorf("git ls-remote --heads %s: %w", remote, err)
 }
 
 func CheckoutNewBranch(path, branch, base string) error {

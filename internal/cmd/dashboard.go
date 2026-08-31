@@ -33,6 +33,7 @@ type directSelection struct {
 	Base            string
 	JSON            bool
 	RequireReusable bool
+	CheckoutTarget  string
 	AllowedRoots    []string
 }
 
@@ -51,6 +52,7 @@ func addNoTUISelectionFlags(cmd *cobra.Command) {
 	cmd.Flags().String("name", "", "workbench name for --new (defaults to the next pool name)")
 	cmd.Flags().String("base", baseBranchMaster, "base branch for --new (master, current, or a branch name)")
 	cmd.Flags().String("init-cmd", "", "override init_cmd for this no-TUI action (pass '-' or an empty value to disable)")
+	cmd.Flags().String("checkout", "", "checkout a PR number, GitHub PR URL, or branch instead of running init_cmd")
 	cmd.Flags().String("directive-file", "", "write cd directives to a file (for shell wrappers)")
 	cmd.Flags().Bool("require-reusable", false, "fail unless the selected existing workbench is freshly classified safe")
 	cmd.Flags().StringArray("allowed-root", nil, "limit direct selection to paths under these roots")
@@ -174,6 +176,8 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 	createNew, _ := boolFlag(cmd, "new")
 	jsonOutput, _ := boolFlag(cmd, "json")
 	requireReusable, _ := boolFlag(cmd, "require-reusable")
+	checkoutTarget, checkoutChanged := stringFlag(cmd, "checkout")
+	checkoutTarget = strings.TrimSpace(checkoutTarget)
 	allowedRoots, _ := cmd.Flags().GetStringArray("allowed-root")
 	if createNew && len(args) > 0 {
 		return directSelection{}, false, fmt.Errorf("workbench id cannot be combined with --new")
@@ -182,8 +186,8 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 		return directSelection{}, false, fmt.Errorf("expected at most one workbench id")
 	}
 	if !createNew && len(args) == 0 {
-		if jsonOutput || requireReusable || len(allowedRoots) > 0 {
-			return directSelection{}, false, fmt.Errorf("--json, --require-reusable, and --allowed-root require --new or a workbench id")
+		if jsonOutput || requireReusable || checkoutChanged || len(allowedRoots) > 0 {
+			return directSelection{}, false, fmt.Errorf("--json, --require-reusable, --checkout, and --allowed-root require --new or a workbench id")
 		}
 		return directSelection{}, false, nil
 	}
@@ -206,6 +210,13 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 	if createNew && requireReusable {
 		return directSelection{}, false, fmt.Errorf("--require-reusable applies only to an existing workbench")
 	}
+	_, initChanged := stringFlag(cmd, "init-cmd")
+	if checkoutChanged && checkoutTarget == "" {
+		return directSelection{}, false, fmt.Errorf("--checkout requires a PR number or branch")
+	}
+	if checkoutTarget != "" && initChanged {
+		return directSelection{}, false, fmt.Errorf("--checkout cannot be combined with --init-cmd")
+	}
 	direct := directSelection{
 		CreateNew:       createNew,
 		Type:            benchType,
@@ -213,6 +224,7 @@ func parseDirectSelection(cmd *cobra.Command, args []string) (directSelection, b
 		Base:            base,
 		JSON:            jsonOutput,
 		RequireReusable: requireReusable,
+		CheckoutTarget:  checkoutTarget,
 		AllowedRoots:    allowedRoots,
 	}
 	if len(args) == 1 {
@@ -234,12 +246,13 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			return err
 		}
 		input := bench.CreateInput{
-			Type:         direct.Type,
-			Name:         direct.Name,
-			BaseBranch:   baseBranch,
-			RunInit:      strings.TrimSpace(settings.InitCmd) != "",
-			QuietOutput:  direct.JSON,
-			ValidatePath: func(candidate string) error { return requireAllowedPath(candidate, direct.AllowedRoots) },
+			Type:           direct.Type,
+			Name:           direct.Name,
+			BaseBranch:     baseBranch,
+			RunInit:        direct.CheckoutTarget == "" && strings.TrimSpace(settings.InitCmd) != "",
+			CheckoutTarget: direct.CheckoutTarget,
+			QuietOutput:    direct.JSON,
+			ValidatePath:   func(candidate string) error { return requireAllowedPath(candidate, direct.AllowedRoots) },
 		}
 		updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 		if err != nil {
@@ -280,8 +293,12 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			return fmt.Errorf("workbench %q is not reusable: %s", selected.Name, status.Label)
 		}
 	}
-	tracef("direct-switch: bench=%s path=%s initCmd=%q swapOnSelect=%t", selected.Name, selected.Path, settings.InitCmd, opts.swapOnSelect)
-	if strings.TrimSpace(settings.InitCmd) != "" {
+	tracef("direct-switch: bench=%s path=%s initCmd=%q checkout=%q swapOnSelect=%t", selected.Name, selected.Path, settings.InitCmd, direct.CheckoutTarget, opts.swapOnSelect)
+	if direct.CheckoutTarget != "" {
+		if err := bench.CheckoutTarget(selected.Path, direct.CheckoutTarget); err != nil {
+			return err
+		}
+	} else if strings.TrimSpace(settings.InitCmd) != "" {
 		tracef("direct-switch: running init_cmd %q in %s", settings.InitCmd, selected.Path)
 		if err := bench.RunInitCmdWithOutput(selected.Path, settings.InitCmd, !direct.JSON); err != nil {
 			return err

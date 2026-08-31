@@ -106,6 +106,14 @@ Shortcuts:
 # machine-readable direct selection (stdout is one JSON document)
 ./worktree-bench wb-123 --init-cmd gnm --json
 ./worktree-bench --new --type large --init-cmd gnm --json
+
+# checkout a PR number, GitHub PR URL, or existing local/remote branch instead of running init_cmd
+./worktree-bench wb-123 --checkout 42 --json
+./worktree-bench wb-123 --checkout https://github.com/owner/repo/pull/42 --json
+./worktree-bench --new --type large --checkout feature/example --json
+
+# checkout directly in an authorized current working tree
+./worktree-bench checkout feature/example --path /path/to/repo --allowed-root /path/to
 ```
 
 JSON selection output has the shape:

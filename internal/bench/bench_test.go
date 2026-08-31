@@ -41,6 +41,40 @@ func initializedRepo(t *testing.T) string {
 	return repo
 }
 
+func TestCreateWorkbenchChecksOutTargetBeforeSetup(t *testing.T) {
+	repo := initializedRepo(t)
+	gitTest(t, repo, "checkout", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(repo, "target-only.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, repo, "add", "target-only.txt")
+	gitTest(t, repo, "commit", "-m", "feature target")
+	gitTest(t, repo, "checkout", "master")
+
+	worktreesDir := filepath.Join(filepath.Dir(repo), "worktrees")
+	settings := config.Settings{
+		WorktreesDir: worktreesDir,
+		SetupCmd:     "test -f target-only.txt",
+		BranchPrefix: "bench/",
+	}
+	pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir}
+	_, created, err := CreateWorkbench(repo, settings, pool, CreateInput{
+		Type:           config.TypeMedium,
+		Name:           "feature-bench",
+		BaseBranch:     "master",
+		CheckoutTarget: "feature",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created == nil || created.LastSetup == "" {
+		t.Fatalf("target-specific setup did not complete: %+v", created)
+	}
+	if branch := gitTest(t, created.Path, "branch", "--show-current"); branch != "feature" {
+		t.Fatalf("created workbench branch = %q, want feature", branch)
+	}
+}
+
 func TestCreateWorkbenchValidatesDerivedPathBeforeFilesystemChanges(t *testing.T) {
 	repo := initializedRepo(t)
 	root := filepath.Dir(repo)
@@ -71,14 +105,17 @@ func TestCreateWorkbenchValidatesDerivedPathBeforeFilesystemChanges(t *testing.T
 
 func TestCreateWorkbenchFailureRemovesWorktreeAndGeneratedBranch(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		benchType string
-		setupCmd  string
-		initCmd   string
-		runInit   bool
+		name           string
+		benchType      string
+		setupCmd       string
+		initCmd        string
+		runInit        bool
+		checkoutTarget string
+		errorContains  string
 	}{
-		{name: "setup", benchType: config.TypeMedium, setupCmd: "false"},
-		{name: "init", benchType: config.TypeSmall, initCmd: "false", runInit: true},
+		{name: "setup", benchType: config.TypeMedium, setupCmd: "false", errorContains: "false"},
+		{name: "init", benchType: config.TypeSmall, initCmd: "false", runInit: true, errorContains: "false"},
+		{name: "checkout", benchType: config.TypeSmall, checkoutTarget: "bad..branch", errorContains: "valid branch"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repo := initializedRepo(t)
@@ -91,12 +128,13 @@ func TestCreateWorkbenchFailureRemovesWorktreeAndGeneratedBranch(t *testing.T) {
 			}
 			pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir, Benches: []config.Workbench{}}
 			updated, created, err := CreateWorkbench(repo, settings, pool, CreateInput{
-				Type:       test.benchType,
-				Name:       "failed-bench",
-				BaseBranch: "master",
-				RunInit:    test.runInit,
+				Type:           test.benchType,
+				Name:           "failed-bench",
+				BaseBranch:     "master",
+				RunInit:        test.runInit,
+				CheckoutTarget: test.checkoutTarget,
 			})
-			if err == nil || !strings.Contains(err.Error(), "false") {
+			if err == nil || !strings.Contains(err.Error(), test.errorContains) {
 				t.Fatalf("expected original command error, got %v", err)
 			}
 			if created != nil || len(updated.Benches) != 0 {

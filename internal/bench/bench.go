@@ -6,15 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"worktree-bench/internal/config"
 	"worktree-bench/internal/gitutil"
 )
-
-var prPattern = regexp.MustCompile(`^(#|pr:)?(\d+)$`)
 
 const tempCommitMessage = "__WTSWAP_TEMP__"
 
@@ -116,7 +113,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		if err := gitutil.CheckoutNewBranch(bench.Path, branchName, baseBranch); err != nil {
 			return pool, nil, err
 		}
-		if input.RunInit && settings.InitCmd != "" {
+		if input.CheckoutTarget != "" {
+			if err := CheckoutTarget(bench.Path, input.CheckoutTarget); err != nil {
+				return pool, nil, err
+			}
+		} else if input.RunInit && settings.InitCmd != "" {
 			if err := runCommand(bench.Path, settings.InitCmd); err != nil {
 				return pool, nil, err
 			}
@@ -148,6 +149,12 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		CreatedAt: config.NowString(),
 	}
 
+	if input.CheckoutTarget != "" {
+		if err := CheckoutTarget(benchPath, input.CheckoutTarget); err != nil {
+			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
+		}
+	}
+
 	if benchType == config.TypeLarge || benchType == config.TypeMedium {
 		if settings.SetupCmd != "" {
 			if err := runCommand(benchPath, settings.SetupCmd); err != nil {
@@ -165,7 +172,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 		newBench.DevServer = &config.DevServer{Cmd: settings.DevCmd, PID: pid, StartedAt: config.NowString()}
 	}
 
-	if input.RunInit && settings.InitCmd != "" {
+	if input.CheckoutTarget == "" && input.RunInit && settings.InitCmd != "" {
 		if err := runCommand(benchPath, settings.InitCmd); err != nil {
 			pid := 0
 			if newBench.DevServer != nil {
@@ -192,33 +199,6 @@ func cleanupCreatedWorkbench(repoRoot, benchPath, branch string, pid int, cause 
 		return fmt.Errorf("%w (cleanup failed: %s)", cause, strings.Join(cleanupErrors, "; "))
 	}
 	return cause
-}
-
-func checkoutRef(path, ref string) error {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return nil
-	}
-	if prPattern.MatchString(ref) {
-		matches := prPattern.FindStringSubmatch(ref)
-		num, _ := strconv.Atoi(matches[2])
-		return ghCheckoutPR(path, num)
-	}
-	return gitutil.CheckoutBranch(path, ref)
-}
-
-func ghCheckoutPR(path string, number int) error {
-	cmd := exec.Command("gh", "pr", "checkout", fmt.Sprintf("%d", number))
-	cmd.Dir = path
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		detail := strings.TrimSpace(string(out))
-		if detail != "" {
-			return fmt.Errorf("gh pr checkout %d: %s", number, detail)
-		}
-		return fmt.Errorf("gh pr checkout %d: %w", number, err)
-	}
-	return nil
 }
 
 func runCommand(dir, command string) error {
@@ -482,14 +462,15 @@ func runGit(path string, args ...string) error {
 
 // CreateInput describes a create action.
 type CreateInput struct {
-	Type         string
-	UseExisting  bool
-	BenchID      string
-	Name         string
-	BaseBranch   string
-	RunInit      bool
-	QuietOutput  bool
-	ValidatePath func(string) error
+	Type           string
+	UseExisting    bool
+	BenchID        string
+	Name           string
+	BaseBranch     string
+	RunInit        bool
+	CheckoutTarget string
+	QuietOutput    bool
+	ValidatePath   func(string) error
 }
 
 // AdoptInput describes adopting the current worktree into the pool.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -41,6 +42,19 @@ func TestParseDirectSelectionJSONNew(t *testing.T) {
 	}
 }
 
+func TestParseDirectSelectionCarriesCheckoutTarget(t *testing.T) {
+	selection, direct, err := directSelectionForTest(t, []string{"--json", "--checkout", "#42"}, []string{"wb-123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !direct || selection.CheckoutTarget != "#42" {
+		t.Fatalf("unexpected selection: %+v direct=%t", selection, direct)
+	}
+	if _, _, err := directSelectionForTest(t, []string{"--checkout", "feature", "--init-cmd", "gnm"}, []string{"wb-123"}); err == nil {
+		t.Fatal("expected checkout and init-cmd to conflict")
+	}
+}
+
 func TestParseDirectSelectionCarriesSafetyBoundary(t *testing.T) {
 	selection, direct, err := directSelectionForTest(t, []string{"--json", "--require-reusable", "--allowed-root", "/tmp/one", "--allowed-root", "/tmp/two"}, []string{"wb-123"})
 	if err != nil {
@@ -52,7 +66,7 @@ func TestParseDirectSelectionCarriesSafetyBoundary(t *testing.T) {
 }
 
 func TestParseDirectSelectionFlagsRequireTarget(t *testing.T) {
-	for _, flags := range [][]string{{"--json"}, {"--require-reusable"}, {"--allowed-root", "/tmp"}} {
+	for _, flags := range [][]string{{"--json"}, {"--require-reusable"}, {"--checkout", "feature"}, {"--allowed-root", "/tmp"}} {
 		if _, _, err := directSelectionForTest(t, flags, nil); err == nil {
 			t.Fatalf("expected %v without a direct target to fail", flags)
 		}
@@ -107,6 +121,37 @@ func TestDirectSelectionRechecksReusableBeforeInit(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("init command ran after failed reusable check: %v", err)
+	}
+}
+
+func TestDirectSelectionCheckoutReplacesInit(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-b", "master"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("clean\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "tracked.txt"}, {"commit", "-m", "initial"}, {"branch", "feature"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+
+	marker := filepath.Join(repo, "initialized")
+	settings := config.Settings{InitCmd: "touch " + marker}
+	pool := config.Pool{Benches: []config.Workbench{{ID: "wb-123", Name: "test", Type: "large", Path: repo}}}
+	direct := directSelection{BenchID: "wb-123", CheckoutTarget: "feature", AllowedRoots: []string{repo}, JSON: true}
+	if err := runDirectSelection(&cobra.Command{}, repo, settings, pool, dashboardOptions{}, direct); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("init command ran during checkout: %v", err)
+	}
+	if out, err := exec.Command("git", "-C", repo, "branch", "--show-current").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "feature" {
+		t.Fatalf("current branch = %q, err=%v", out, err)
 	}
 }
 
