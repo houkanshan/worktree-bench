@@ -124,17 +124,17 @@ If the current worktree is not registered, you'll be asked whether to adopt it o
 ```bash
 ./worktree-bench status
 
-# machine-readable pool metadata using cached display status
+# full machine-readable status with fresh Git/PR reuse safety
+./worktree-bench status --json
+
+# cached display metadata without reuse safety
 ./worktree-bench status --json --fast
 
-# include fresh Git/PR safety data for automatic selection
-./worktree-bench status --json --selection
-
 # constrain command execution to an authorized filesystem root
-./worktree-bench status --json --selection --allowed-root /path/to/worktrees
+./worktree-bench status --json --allowed-root /path/to/worktrees
 ```
 
-Selection status adds a `git` object to every authorized bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or exactly matches the head of a merged pull request. Dirty worktrees, unpushed commits, and open, closed, missing, stale, or unknown pull requests are never safe. Selection checks bypass the display-status cache. Repeat `--allowed-root` when a caller has multiple authorized roots; benches outside those roots remain listed without a `git` object.
+Full JSON status adds a `git` object to every authorized bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or exactly matches the head of a merged pull request. Dirty worktrees, unpushed commits, and open, closed, missing, stale, or unknown pull requests are never safe. `--fast` explicitly skips these fresh reuse checks. Repeat `--allowed-root` when a caller has multiple authorized roots; benches outside those roots remain listed without a `git` object.
 
 Automation can require a second fresh check immediately before initialization:
 

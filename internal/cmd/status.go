@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 
@@ -33,13 +32,9 @@ func newStatusCommand() *cobra.Command {
 
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			fast, _ := cmd.Flags().GetBool("fast")
-			selection, _ := cmd.Flags().GetBool("selection")
 			allowedRoots, _ := cmd.Flags().GetStringArray("allowed-root")
-			if selection && !jsonOutput {
-				return fmt.Errorf("--selection requires --json")
-			}
 			if jsonOutput {
-				return writeStatusJSON(repoRoot, settings, pool, fast, selection, allowedRoots)
+				return writeStatusJSON(repoRoot, settings, pool, fast, allowedRoots)
 			}
 
 			return ui.RunStatus(pool.Benches)
@@ -47,8 +42,7 @@ func newStatusCommand() *cobra.Command {
 	}
 	cmd.Flags().Bool("json", false, "print workbench status as JSON")
 	cmd.Flags().Bool("fast", false, "reuse cached status for JSON output and skip expensive diff on cache misses")
-	cmd.Flags().Bool("selection", false, "include fresh reusable-safety status in JSON output")
-	cmd.Flags().StringArray("allowed-root", nil, "limit selection checks to paths under these roots")
+	cmd.Flags().StringArray("allowed-root", nil, "limit JSON status checks to paths under these roots")
 	return cmd
 }
 
@@ -68,23 +62,19 @@ type statusBenchJSON struct {
 	Git         *gitutil.ReuseStatus `json:"git,omitempty"`
 }
 
-func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool, fast, selection bool, allowedRoots []string) error {
-	statusBenches := pool.Benches
-	if selection {
-		var err error
-		statusBenches, err = filterAllowedBenches(pool.Benches, allowedRoots)
-		if err != nil {
-			return err
-		}
+func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool, fast bool, allowedRoots []string) error {
+	statusBenches, err := filterAllowedBenches(pool.Benches, allowedRoots)
+	if err != nil {
+		return err
 	}
 	var statuses map[string]ui.BenchStatus
-	if fast || selection {
+	if fast {
 		statuses = ui.LoadBenchStatusesCached(repoRoot, statusBenches, ui.StatusOptions{UseCache: true, Fast: true})
 	} else {
 		statuses = ui.LoadBenchStatuses(statusBenches)
 	}
 	var reuseStatuses map[string]gitutil.ReuseStatus
-	if selection {
+	if !fast {
 		reuseStatuses = loadReuseStatuses(statusBenches)
 	}
 	benches := make([]statusBenchJSON, 0, len(pool.Benches))
