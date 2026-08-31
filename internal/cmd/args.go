@@ -1,30 +1,18 @@
 package cmd
 
-import "strings"
+import (
+	"strings"
 
-var rootSubcommands = map[string]struct{}{
-	"adopt":      {},
-	"completion": {},
-	"create":     {},
-	"delete":     {},
-	"help":       {},
-	"status":     {},
-	"swap":       {},
-	"version":    {},
-}
-
-var rootStringFlags = map[string]struct{}{
-	"--base":           {},
-	"--directive-file": {},
-	"--init-cmd":       {},
-	"--name":           {},
-	"--type":           {},
-}
+	"github.com/spf13/cobra"
+)
 
 // NormalizeRootArgs lets the root command accept a workbench id as a positional
 // argument even though cobra would otherwise treat an unknown first positional
 // token as a subcommand name. Known subcommands are left untouched.
-func NormalizeRootArgs(args []string) []string {
+func NormalizeRootArgs(command *cobra.Command, args []string) []string {
+	command.InitDefaultHelpCmd()
+	command.InitDefaultCompletionCmd()
+
 	out := append([]string(nil), args...)
 	skipValue := false
 	for i, arg := range out {
@@ -35,28 +23,19 @@ func NormalizeRootArgs(args []string) []string {
 		if arg == "--" {
 			return out
 		}
-		if strings.HasPrefix(arg, "--") {
-			name := arg
-			if before, _, ok := strings.Cut(arg, "="); ok {
-				name = before
-			}
-			if _, ok := rootStringFlags[name]; ok && !strings.Contains(arg, "=") {
-				skipValue = true
-			}
-			continue
-		}
 		if strings.HasPrefix(arg, "-") {
+			skipValue = rootFlagNeedsSeparateValue(command, arg)
 			continue
 		}
-		if _, ok := rootSubcommands[arg]; ok {
+		if isRootSubcommand(command, arg) {
 			return out
 		}
-		return moveDirectArgsAfterFlags(out, i)
+		return moveDirectArgsAfterFlags(command, out, i)
 	}
 	return out
 }
 
-func moveDirectArgsAfterFlags(args []string, directIndex int) []string {
+func moveDirectArgsAfterFlags(command *cobra.Command, args []string, directIndex int) []string {
 	flags := append([]string(nil), args[:directIndex]...)
 	positionals := []string{args[directIndex]}
 	skipValue := false
@@ -69,15 +48,9 @@ func moveDirectArgsAfterFlags(args []string, directIndex int) []string {
 		if arg == "--" {
 			continue
 		}
-		if strings.HasPrefix(arg, "--") {
+		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			name := arg
-			if before, _, ok := strings.Cut(arg, "="); ok {
-				name = before
-			}
-			if _, ok := rootStringFlags[name]; ok && !strings.Contains(arg, "=") {
-				skipValue = true
-			}
+			skipValue = rootFlagNeedsSeparateValue(command, arg)
 			continue
 		}
 		positionals = append(positionals, arg)
@@ -87,4 +60,26 @@ func moveDirectArgsAfterFlags(args []string, directIndex int) []string {
 	withTerminator = append(withTerminator, "--")
 	withTerminator = append(withTerminator, positionals...)
 	return withTerminator
+}
+
+func isRootSubcommand(command *cobra.Command, arg string) bool {
+	for _, subcommand := range command.Commands() {
+		if subcommand.Name() == arg || subcommand.HasAlias(arg) {
+			return true
+		}
+	}
+	return false
+}
+
+func rootFlagNeedsSeparateValue(command *cobra.Command, arg string) bool {
+	if strings.HasPrefix(arg, "--") {
+		name, _, hasInlineValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		flag := command.Flags().Lookup(name)
+		return flag != nil && !hasInlineValue && flag.NoOptDefVal == ""
+	}
+	if len(arg) == 2 {
+		flag := command.Flags().ShorthandLookup(arg[1:])
+		return flag != nil && flag.NoOptDefVal == ""
+	}
+	return false
 }
