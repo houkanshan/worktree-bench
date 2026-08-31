@@ -123,7 +123,15 @@ If the current worktree is not registered, you'll be asked whether to adopt it o
 ### View status
 ```bash
 ./worktree-bench status
+
+# machine-readable pool metadata using cached display status
+./worktree-bench status --json --fast
+
+# include fresh Git/PR safety data for automatic selection
+./worktree-bench status --json --selection
 ```
+
+Selection status adds a `git` object to every bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or associated with a merged pull request. Dirty worktrees, unpushed commits, and open, closed, missing, or unknown pull requests are never safe. Selection checks bypass the display-status cache.
 
 ### Adopt current worktree
 ```bash
