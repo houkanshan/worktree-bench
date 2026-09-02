@@ -119,6 +119,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 			if err != nil {
 				return pool, nil, "", err
 			}
+			if input.ValidatePath != nil {
+				if err := input.ValidatePath(checkout.Path); err != nil {
+					return pool, nil, "", err
+				}
+			}
 			targetPath = checkout.Path
 		} else if input.RunInit && settings.InitCmd != "" {
 			if err := runCommand(bench.Path, settings.InitCmd); err != nil {
@@ -158,6 +163,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 			return pool, nil, "", cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
 		}
 		if checkout.Path != benchPath {
+			if input.ValidatePath != nil {
+				if err := input.ValidatePath(checkout.Path); err != nil {
+					return pool, nil, "", cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
+				}
+			}
 			if err := cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, nil); err != nil {
 				return pool, nil, "", err
 			}
