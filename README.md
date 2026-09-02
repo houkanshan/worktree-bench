@@ -112,8 +112,24 @@ Shortcuts:
 ./worktree-bench wb-123 --checkout https://github.com/owner/repo/pull/42 --json
 ./worktree-bench --new --type large --checkout feature/example --json
 
-# checkout directly in an authorized current working tree
-./worktree-bench checkout feature/example --path /path/to/repo --allowed-root /path/to
+# resolve first, including an existing worktree that already owns the target
+./worktree-bench resolve-target feature/example --path /path/to/repo --allowed-root /path/to
+
+# checkout directly in an authorized current working tree; --json reports the
+# actual path, which may be an existing worktree rather than --path
+./worktree-bench checkout feature/example --path /path/to/repo --allowed-root /path/to --json
+```
+
+Target resolution returns an immutable commit, a branch name, and an existing authorized worktree when present:
+
+```json
+{"kind":"branch","commit":"0123456789abcdef...","branchName":"feature/example","existingPath":"/path/to/existing-worktree"}
+```
+
+Checkout reconciles concurrent worktree ownership and reports where the target ended up:
+
+```json
+{"kind":"branch","commit":"0123456789abcdef...","branchName":"feature/example","path":"/path/to/existing-worktree","disposition":"existing"}
 ```
 
 JSON selection output has the shape:

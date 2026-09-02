@@ -28,6 +28,10 @@
   - TUI lets you pick a workbench by type.
   - Optionally swaps current worktree with the target (via `git worktree move`).
   - Emits shell directives (`cd 'path'`) to stdout or a directive file.
+- **checkout / resolve-target**
+  - Resolves branches and pull requests to an immutable commit and branch name.
+  - Enumerates Git worktrees structurally; checkout returns an existing authorized worktree instead of failing when it already owns the target.
+  - Rechecks worktree ownership after a checkout failure to reconcile races without parsing Git stderr.
 - **status**
   - TUI shows branch, PR (via `gh`), and uncommitted line counts.
 - **adopt**
@@ -39,7 +43,7 @@
 ## Packages
 - `internal/config`: settings + pool persistence
 - `internal/gitutil`: git helpers (branch, diff, worktree add/move)
-- `internal/bench`: core operations (create, switch, setup/dev)
+- `internal/bench`: core operations (create, switch, target resolution/checkout, setup/dev)
 - `internal/ui`: Bubble Tea models for create/switch/status
 - `internal/cmd`: cobra CLI commands
 
