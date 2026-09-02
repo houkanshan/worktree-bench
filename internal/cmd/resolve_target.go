@@ -10,10 +10,10 @@ import (
 	"worktree-bench/internal/bench"
 )
 
-func newCheckoutCommand() *cobra.Command {
+func newResolveTargetCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "checkout <pr-number|branch|github-url>",
-		Short:        "Checkout a PR or branch in an authorized working tree",
+		Use:          "resolve-target <pr-number|branch|github-url>",
+		Short:        "Resolve a checkout target and find its existing worktree",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -30,22 +30,19 @@ func newCheckoutCommand() *cobra.Command {
 			if err := requireAllowedPath(workingTree, allowedRoots); err != nil {
 				return err
 			}
-			result, err := bench.CheckoutTarget(workingTree, target)
+			resolved, err := bench.ResolveTarget(workingTree, target)
 			if err != nil {
 				return err
 			}
-			if err := requireAllowedPath(result.Path, allowedRoots); err != nil {
-				return err
+			if resolved.ExistingPath != "" {
+				if err := requireAllowedPath(resolved.ExistingPath, allowedRoots); err != nil {
+					return err
+				}
 			}
-			jsonOutput, _ := cmd.Flags().GetBool("json")
-			if jsonOutput {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
-			}
-			return nil
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(resolved)
 		},
 	}
-	cmd.Flags().String("path", ".", "working tree to update")
-	cmd.Flags().StringArray("allowed-root", nil, "limit checkout to paths under these roots")
-	cmd.Flags().Bool("json", false, "print the resolved checkout result as JSON")
+	cmd.Flags().String("path", ".", "repository working tree used to resolve the target")
+	cmd.Flags().StringArray("allowed-root", nil, "limit resolved worktrees to paths under these roots")
 	return cmd
 }

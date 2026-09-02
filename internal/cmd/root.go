@@ -18,6 +18,7 @@ func NewRootCommand() *cobra.Command {
 	addNoTUISelectionFlags(rootCmd)
 
 	rootCmd.AddCommand(newCheckoutCommand())
+	rootCmd.AddCommand(newResolveTargetCommand())
 	rootCmd.AddCommand(newCreateCommand())
 	rootCmd.AddCommand(newSwapCommand())
 	rootCmd.AddCommand(newStatusCommand())

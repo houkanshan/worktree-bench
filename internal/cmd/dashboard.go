@@ -294,10 +294,16 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 		}
 	}
 	tracef("direct-switch: bench=%s path=%s initCmd=%q checkout=%q swapOnSelect=%t", selected.Name, selected.Path, settings.InitCmd, direct.CheckoutTarget, opts.swapOnSelect)
+	targetPath := selected.Path
 	if direct.CheckoutTarget != "" {
-		if err := bench.CheckoutTarget(selected.Path, direct.CheckoutTarget); err != nil {
+		checkout, err := bench.CheckoutTarget(selected.Path, direct.CheckoutTarget)
+		if err != nil {
 			return err
 		}
+		if err := requireAllowedPath(checkout.Path, direct.AllowedRoots); err != nil {
+			return err
+		}
+		targetPath = checkout.Path
 	} else if strings.TrimSpace(settings.InitCmd) != "" {
 		tracef("direct-switch: running init_cmd %q in %s", settings.InitCmd, selected.Path)
 		if err := bench.RunInitCmdWithOutput(selected.Path, settings.InitCmd, !direct.JSON); err != nil {
@@ -305,7 +311,10 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 		}
 	}
 	if !opts.swapOnSelect {
-		return emitSelection(cmd, *selected, selected.Path, false, direct.JSON)
+		return emitSelection(cmd, *selected, targetPath, false, direct.JSON)
+	}
+	if targetPath != selected.Path {
+		return fmt.Errorf("cannot swap to a checkout target owned by another worktree")
 	}
 	targetPath, err := bench.Switch(repoRoot, selected.Path, true)
 	if err != nil {

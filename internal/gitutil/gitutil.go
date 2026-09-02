@@ -147,26 +147,44 @@ func ResolvePrimaryBranch(path string) (string, error) {
 }
 
 func CheckoutBranch(path, branch string) error {
-	branch = strings.TrimSpace(branch)
-	if branch == "" || strings.HasPrefix(branch, "-") {
-		return fmt.Errorf("invalid branch %q", branch)
-	}
-	if err := runGit(path, "check-ref-format", "--branch", branch); err != nil {
-		return err
-	}
-
-	localRef := "refs/heads/" + branch
-	local, err := gitRefExists(path, localRef)
+	startPoint, local, err := ResolveBranch(path, branch)
 	if err != nil {
 		return err
 	}
 	if local {
 		return runGit(path, "checkout", branch)
 	}
+	remote, _, ok := strings.Cut(startPoint, "/")
+	if !ok {
+		return fmt.Errorf("branch %q has invalid remote start point %q", branch, startPoint)
+	}
+	return runGit(path, "checkout", "-b", branch, "--track", remote+"/"+branch)
+}
+
+// ResolveBranch validates a branch and fetches its remote-tracking ref when the
+// branch exists only on a remote. It returns a commit-ish start point and
+// whether the branch already exists locally, without changing any worktree.
+func ResolveBranch(path, branch string) (string, bool, error) {
+	branch = strings.TrimSpace(branch)
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return "", false, fmt.Errorf("invalid branch %q", branch)
+	}
+	if err := runGit(path, "check-ref-format", "--branch", branch); err != nil {
+		return "", false, err
+	}
+
+	localRef := "refs/heads/" + branch
+	local, err := gitRefExists(path, localRef)
+	if err != nil {
+		return "", false, err
+	}
+	if local {
+		return branch, true, nil
+	}
 
 	remotes, err := checkoutRemotes(path)
 	if err != nil {
-		return err
+		return "", false, err
 	}
 	for _, remote := range remotes {
 		exists, err := remoteBranchExists(path, remote, branch)
@@ -176,11 +194,24 @@ func CheckoutBranch(path, branch string) error {
 		remoteRef := "refs/remotes/" + remote + "/" + branch
 		refspec := "+refs/heads/" + branch + ":" + remoteRef
 		if err := runGit(path, "fetch", remote, refspec); err != nil {
-			return err
+			return "", false, err
 		}
-		return runGit(path, "checkout", "-b", branch, "--track", remote+"/"+branch)
+		return remote + "/" + branch, false, nil
 	}
-	return fmt.Errorf("branch %q not found", branch)
+	return "", false, fmt.Errorf("branch %q not found", branch)
+}
+
+func ResolveCommit(path, ref string) (string, error) {
+	args := []string{"-C", path, "rev-parse", "--verify", ref + "^{commit}"}
+	out, err := exec.Command("git", args...).CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return "", fmt.Errorf("git rev-parse --verify: %s", detail)
+		}
+		return "", fmt.Errorf("git rev-parse --verify: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func checkoutRemotes(path string) ([]string, error) {

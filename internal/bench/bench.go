@@ -114,7 +114,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 			return pool, nil, err
 		}
 		if input.CheckoutTarget != "" {
-			if err := CheckoutTarget(bench.Path, input.CheckoutTarget); err != nil {
+			if _, err := CheckoutTarget(bench.Path, input.CheckoutTarget); err != nil {
 				return pool, nil, err
 			}
 		} else if input.RunInit && settings.InitCmd != "" {
@@ -150,7 +150,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	}
 
 	if input.CheckoutTarget != "" {
-		if err := CheckoutTarget(benchPath, input.CheckoutTarget); err != nil {
+		if _, err := CheckoutTarget(benchPath, input.CheckoutTarget); err != nil {
 			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
 		}
 	}

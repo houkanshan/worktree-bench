@@ -35,13 +35,13 @@ func TestParsePRNumberSupportsGitHubURLs(t *testing.T) {
 func TestCheckoutTargetSupportsBranchAndPRNumber(t *testing.T) {
 	repo := initializedRepo(t)
 	gitTest(t, repo, "branch", "feature")
-	if err := CheckoutTarget(repo, "feature"); err != nil {
+	if _, err := CheckoutTarget(repo, "feature"); err != nil {
 		t.Fatal(err)
 	}
 	if branch := gitTest(t, repo, "branch", "--show-current"); branch != "feature" {
 		t.Fatalf("current branch = %q, want feature", branch)
 	}
-	if err := CheckoutTarget(repo, "missing-branch"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := CheckoutTarget(repo, "missing-branch"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected a missing branch error, got %v", err)
 	}
 	if branches := gitTest(t, repo, "branch", "--format=%(refname:short)"); strings.Contains(branches, "missing-branch") {
@@ -57,7 +57,7 @@ func TestCheckoutTargetSupportsBranchAndPRNumber(t *testing.T) {
 	gitTest(t, repo, "push", "origin", "remote-only")
 	gitTest(t, repo, "branch", "-D", "remote-only")
 	gitTest(t, repo, "update-ref", "-d", "refs/remotes/origin/remote-only")
-	if err := CheckoutTarget(repo, "remote-only"); err != nil {
+	if _, err := CheckoutTarget(repo, "remote-only"); err != nil {
 		t.Fatal(err)
 	}
 	if branch := gitTest(t, repo, "branch", "--show-current"); branch != "remote-only" {
@@ -67,13 +67,24 @@ func TestCheckoutTargetSupportsBranchAndPRNumber(t *testing.T) {
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "gh.log")
 	ghPath := filepath.Join(binDir, "gh")
-	if err := os.WriteFile(ghPath, []byte("#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$*\" > \"$WTB_GH_LOG\"\n"), 0o755); err != nil {
+	commit := gitTest(t, repo, "rev-parse", "HEAD")
+	script := `#!/bin/sh
+if [ "$1 $2" = "pr view" ]; then
+  printf '{"headRefName":"feature","headRefOid":"%s","isCrossRepository":false,"number":42,"url":"https://github.com/owner/repo/pull/42"}\n' "$WTB_HEAD"
+elif [ "$1 $2" = "repo view" ]; then
+  printf 'owner/repo\n'
+elif [ "$1 $2" = "pr checkout" ]; then
+  printf '%s\n' "$PWD" "$*" > "$WTB_GH_LOG"
+fi
+`
+	if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("WTB_GH_LOG", logPath)
+	t.Setenv("WTB_HEAD", commit)
 	for _, target := range []string{"#42", "https://github.com/owner/repo/pull/42/files"} {
-		if err := CheckoutTarget(repo, target); err != nil {
+		if _, err := CheckoutTarget(repo, target); err != nil {
 			t.Fatal(err)
 		}
 		payload, err := os.ReadFile(logPath)
@@ -86,17 +97,24 @@ func TestCheckoutTargetSupportsBranchAndPRNumber(t *testing.T) {
 	}
 }
 
-func TestCheckoutTargetFailsWhenBranchBelongsToAnotherWorktree(t *testing.T) {
+func TestCheckoutTargetReusesBranchOwnedByAnotherWorktree(t *testing.T) {
 	repo := initializedRepo(t)
 	gitTest(t, repo, "branch", "feature")
 	otherWorktree := filepath.Join(t.TempDir(), "feature-worktree")
 	gitTest(t, repo, "worktree", "add", otherWorktree, "feature")
 
-	err := CheckoutTarget(repo, "feature")
-	if err == nil || !strings.Contains(err.Error(), "used by worktree") {
-		t.Fatalf("expected branch ownership conflict, got %v", err)
+	result, err := CheckoutTarget(repo, "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath, err := filepath.EvalSymlinks(otherWorktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Path != wantPath || result.Disposition != "existing" {
+		t.Fatalf("checkout result = %#v, want existing path %s", result, wantPath)
 	}
 	if branch := gitTest(t, repo, "branch", "--show-current"); branch != "master" {
-		t.Fatalf("checkout detached or changed the caller to %q", branch)
+		t.Fatalf("checkout changed the caller to %q", branch)
 	}
 }
