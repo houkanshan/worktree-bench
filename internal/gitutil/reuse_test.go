@@ -116,7 +116,7 @@ func TestInspectReuseStatusRejectsOpenPRWhoseRemoteHeadMoved(t *testing.T) {
 	t.Setenv("GIT_SCENARIO", "pushed")
 	t.Setenv("PR_OUTPUT", `{"state":"open","number":43,"headSha":"abc123","headRefOid":"newer","stale":false}`)
 	status := InspectReuseStatus(worktree)
-	if status.Kind != "unknown" || status.Severity != "muted" {
+	if status.Kind != "pr-open" || status.Severity != "warning" || status.PR == nil || status.PR.Number != float64(43) {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 }

@@ -156,7 +156,7 @@ func InspectReuseStatus(path string) ReuseStatus {
 		return reuseStatus("pr-closed", "warning", label, branch, boolPtr(false), unpushed, pr)
 	case "open":
 		if payload.HeadRefOID != head {
-			return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
+			return reuseStatus("pr-open", "warning", fmt.Sprintf("#%v open · remote changed", payload.Number), branch, boolPtr(false), unpushed, pr)
 		}
 		return confirmSafe(reuseStatus("pr-open", "safe", fmt.Sprintf("#%v open", payload.Number), branch, boolPtr(false), unpushed, pr))
 	default:
