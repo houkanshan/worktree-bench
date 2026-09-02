@@ -113,7 +113,11 @@ type prView struct {
 }
 
 func resolvePRTarget(path, original string, number int) (ResolvedTarget, error) {
-	args := []string{"pr", "view", original, "--json", "headRefName,headRefOid,isCrossRepository,number,url"}
+	viewTarget := original
+	if parsed, err := url.Parse(original); err != nil || parsed.Scheme == "" {
+		viewTarget = strconv.Itoa(number)
+	}
+	args := []string{"pr", "view", viewTarget, "--json", "headRefName,headRefOid,isCrossRepository,number,url"}
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = path
 	out, err := cmd.CombinedOutput()
