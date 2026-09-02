@@ -43,8 +43,8 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 			BaseBranch:  baseBranch,
 			RunInit:     strings.TrimSpace(settings.InitCmd) != "",
 		}
-		updated, touched, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
-		flow := createFlowResult{pool: updated, changed: touched != nil}
+		updated, touched, targetPath, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
+		flow := createFlowResult{pool: updated, changed: touched != nil, targetPath: targetPath}
 		if touched != nil {
 			flow.touchedIDs = []string{touched.ID}
 			flow.touchedPaths = []string{touched.Path}
@@ -104,12 +104,10 @@ func runCreateFlow(repoRoot string, settings config.Settings, pool config.Pool) 
 		BaseBranch:  baseBranch,
 		RunInit:     result.RunInit,
 	}
-	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
+	updated, created, targetPath, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
-	targetPath := ""
 	if created != nil {
 		message = fmt.Sprintf("Created workbench %s at %s", created.Name, created.Path)
-		targetPath = created.Path
 	}
 	flow := createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}
 	if created != nil {
@@ -181,12 +179,10 @@ func runCreateFromDashboard(repoRoot string, settings config.Settings, pool conf
 		BaseBranch:  baseBranch,
 		RunInit:     result.RunInit,
 	}
-	updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
+	updated, created, targetPath, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 	message := ""
-	targetPath := ""
 	if created != nil {
 		message = fmt.Sprintf("Created workbench %s at %s", created.Name, created.Path)
-		targetPath = created.Path
 	}
 	flow := createFlowResult{pool: updated, changed: created != nil, message: message, targetPath: targetPath}
 	if created != nil {

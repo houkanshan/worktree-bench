@@ -97,6 +97,24 @@ fi
 	}
 }
 
+func TestResolveTargetIgnoresPrunableWorktrees(t *testing.T) {
+	repo := initializedRepo(t)
+	gitTest(t, repo, "branch", "feature")
+	stalePath := filepath.Join(t.TempDir(), "stale-worktree")
+	gitTest(t, repo, "worktree", "add", stalePath, "feature")
+	if err := os.RemoveAll(stalePath); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := ResolveTarget(repo, "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.ExistingPath != "" {
+		t.Fatalf("prunable worktree was returned: %s", resolved.ExistingPath)
+	}
+}
+
 func TestCheckoutTargetReusesBranchOwnedByAnotherWorktree(t *testing.T) {
 	repo := initializedRepo(t)
 	gitTest(t, repo, "branch", "feature")

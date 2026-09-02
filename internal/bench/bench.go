@@ -85,44 +85,47 @@ func EnsureSettings(repoRoot string) (config.Settings, error) {
 	return settings, nil
 }
 
-func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input CreateInput) (config.Pool, *config.Workbench, error) {
+func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input CreateInput) (config.Pool, *config.Workbench, string, error) {
 	benchType := config.NormalizeWorkbenchType(input.Type)
 	if !config.IsWorkbenchType(benchType) {
-		return pool, nil, fmt.Errorf("unsupported workbench type %q", input.Type)
+		return pool, nil, "", fmt.Errorf("unsupported workbench type %q", input.Type)
 	}
 	input.Type = benchType
 	baseBranch := strings.TrimSpace(input.BaseBranch)
 	if baseBranch == "" {
-		return pool, nil, errors.New("missing base branch")
+		return pool, nil, "", errors.New("missing base branch")
 	}
 	branchName := config.NewBranchName(settings.BranchPrefix)
 
 	if input.UseExisting {
 		bench := findBench(pool, input.BenchID)
 		if bench == nil {
-			return pool, nil, fmt.Errorf("workbench not found")
+			return pool, nil, "", fmt.Errorf("workbench not found")
 		}
 		if input.ValidatePath != nil {
 			if err := input.ValidatePath(bench.Path); err != nil {
-				return pool, nil, err
+				return pool, nil, "", err
 			}
 		}
 		if err := gitutil.Fetch(bench.Path); err != nil {
-			return pool, nil, err
+			return pool, nil, "", err
 		}
 		if err := gitutil.CheckoutNewBranch(bench.Path, branchName, baseBranch); err != nil {
-			return pool, nil, err
+			return pool, nil, "", err
 		}
+		targetPath := bench.Path
 		if input.CheckoutTarget != "" {
-			if _, err := CheckoutTarget(bench.Path, input.CheckoutTarget); err != nil {
-				return pool, nil, err
+			checkout, err := CheckoutTarget(bench.Path, input.CheckoutTarget)
+			if err != nil {
+				return pool, nil, "", err
 			}
+			targetPath = checkout.Path
 		} else if input.RunInit && settings.InitCmd != "" {
 			if err := runCommand(bench.Path, settings.InitCmd); err != nil {
-				return pool, nil, err
+				return pool, nil, "", err
 			}
 		}
-		return pool, bench, nil
+		return pool, bench, targetPath, nil
 	}
 
 	if input.Name == "" {
@@ -131,14 +134,14 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	benchPath := filepath.Join(settings.WorktreesDir, input.Name)
 	if input.ValidatePath != nil {
 		if err := input.ValidatePath(benchPath); err != nil {
-			return pool, nil, err
+			return pool, nil, "", err
 		}
 	}
 	if err := os.MkdirAll(settings.WorktreesDir, 0o755); err != nil {
-		return pool, nil, err
+		return pool, nil, "", err
 	}
 	if err := gitutil.WorktreeAdd(repoRoot, benchPath, branchName, baseBranch); err != nil {
-		return pool, nil, err
+		return pool, nil, "", err
 	}
 
 	newBench := config.Workbench{
@@ -150,15 +153,22 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	}
 
 	if input.CheckoutTarget != "" {
-		if _, err := CheckoutTarget(benchPath, input.CheckoutTarget); err != nil {
-			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
+		checkout, err := CheckoutTarget(benchPath, input.CheckoutTarget)
+		if err != nil {
+			return pool, nil, "", cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
+		}
+		if checkout.Path != benchPath {
+			if err := cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, nil); err != nil {
+				return pool, nil, "", err
+			}
+			return pool, nil, checkout.Path, nil
 		}
 	}
 
 	if benchType == config.TypeLarge || benchType == config.TypeMedium {
 		if settings.SetupCmd != "" {
 			if err := runCommand(benchPath, settings.SetupCmd); err != nil {
-				return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
+				return pool, nil, "", cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
 			}
 			newBench.LastSetup = config.NowString()
 		}
@@ -167,7 +177,7 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	if benchType == config.TypeLarge && settings.DevCmd != "" {
 		pid, err := startCommand(benchPath, settings.DevCmd, input.QuietOutput)
 		if err != nil {
-			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
+			return pool, nil, "", cleanupCreatedWorkbench(repoRoot, benchPath, branchName, 0, err)
 		}
 		newBench.DevServer = &config.DevServer{Cmd: settings.DevCmd, PID: pid, StartedAt: config.NowString()}
 	}
@@ -178,12 +188,12 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 			if newBench.DevServer != nil {
 				pid = newBench.DevServer.PID
 			}
-			return pool, nil, cleanupCreatedWorkbench(repoRoot, benchPath, branchName, pid, err)
+			return pool, nil, "", cleanupCreatedWorkbench(repoRoot, benchPath, branchName, pid, err)
 		}
 	}
 
 	pool.Benches = append(pool.Benches, newBench)
-	return pool, &newBench, nil
+	return pool, &newBench, benchPath, nil
 }
 
 func cleanupCreatedWorkbench(repoRoot, benchPath, branch string, pid int, cause error) error {
@@ -196,7 +206,10 @@ func cleanupCreatedWorkbench(repoRoot, benchPath, branch string, pid int, cause 
 		cleanupErrors = append(cleanupErrors, err.Error())
 	}
 	if len(cleanupErrors) > 0 {
-		return fmt.Errorf("%w (cleanup failed: %s)", cause, strings.Join(cleanupErrors, "; "))
+		if cause != nil {
+			return fmt.Errorf("%w (cleanup failed: %s)", cause, strings.Join(cleanupErrors, "; "))
+		}
+		return fmt.Errorf("cleanup failed: %s", strings.Join(cleanupErrors, "; "))
 	}
 	return cause
 }

@@ -254,12 +254,15 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			QuietOutput:    direct.JSON,
 			ValidatePath:   func(candidate string) error { return requireAllowedPath(candidate, direct.AllowedRoots) },
 		}
-		updated, created, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
+		updated, created, targetPath, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
 		if err != nil {
 			return err
 		}
 		if created == nil {
-			return nil
+			if targetPath == "" {
+				return nil
+			}
+			return emitSelection(cmd, config.Workbench{}, targetPath, false, direct.JSON)
 		}
 		if err := config.SavePool(repoRoot, updated); err != nil {
 			return err
@@ -270,7 +273,6 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			fmt.Fprintf(os.Stdout, "Created workbench %s at %s\n", created.Name, created.Path)
 		}
 
-		targetPath := created.Path
 		if opts.swapOnCreate {
 			if targetPath, err = bench.Switch(repoRoot, targetPath, true); err != nil {
 				return err

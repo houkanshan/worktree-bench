@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -30,9 +31,10 @@ type CheckoutResult struct {
 }
 
 type worktreeEntry struct {
-	Path   string
-	Commit string
-	Branch string
+	Path     string
+	Commit   string
+	Branch   string
+	Prunable bool
 }
 
 func ResolveTarget(path, ref string) (ResolvedTarget, error) {
@@ -236,6 +238,8 @@ func listWorktrees(path string) ([]worktreeEntry, error) {
 			current.Commit = value
 		case "branch":
 			current.Branch = value
+		case "prunable":
+			current.Prunable = true
 		}
 	}
 	flush()
@@ -243,15 +247,22 @@ func listWorktrees(path string) ([]worktreeEntry, error) {
 }
 
 func matchingWorktree(entries []worktreeEntry, target ResolvedTarget) string {
+	usable := func(entry worktreeEntry) bool {
+		if entry.Prunable {
+			return false
+		}
+		info, err := os.Stat(entry.Path)
+		return err == nil && info.IsDir()
+	}
 	branchRef := "refs/heads/" + target.BranchName
 	for _, entry := range entries {
-		if entry.Branch == branchRef && strings.EqualFold(entry.Commit, target.Commit) {
+		if usable(entry) && entry.Branch == branchRef && strings.EqualFold(entry.Commit, target.Commit) {
 			return entry.Path
 		}
 	}
 	var detached string
 	for _, entry := range entries {
-		if entry.Branch == "" && strings.EqualFold(entry.Commit, target.Commit) {
+		if usable(entry) && entry.Branch == "" && strings.EqualFold(entry.Commit, target.Commit) {
 			if detached != "" {
 				return ""
 			}
