@@ -142,7 +142,7 @@ If the current worktree is not registered, you'll be asked whether to adopt it o
 ./worktree-bench status --json --allowed-root /path/to/worktrees
 ```
 
-Full JSON status adds a `git` object to every authorized bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or exactly matches the head of a merged pull request. Dirty worktrees, unpushed commits, and open, closed, missing, stale, or unknown pull requests are never safe. `--fast` explicitly skips these fresh reuse checks. Repeat `--allowed-root` when a caller has multiple authorized roots; benches outside those roots remain listed without a `git` object.
+Full JSON status adds a `git` object to every authorized bench. Its `severity` is `safe` only when the worktree is clean and HEAD is contained by the default branch or exactly matches the remote head of an open (including draft) or merged pull request. Dirty worktrees, unpushed commits, closed, missing, stale, mismatched, or unknown pull requests are never safe. `--fast` explicitly skips these fresh reuse checks. Repeat `--allowed-root` when a caller has multiple authorized roots; benches outside those roots remain listed without a `git` object.
 
 Automation can require a second fresh check immediately before initialization:
 

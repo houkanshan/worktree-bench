@@ -15,8 +15,8 @@ import (
 )
 
 // ReuseStatus is the fresh, machine-readable safety status used when selecting
-// a workbench for reuse. Safe means that discarding the branch cannot lose
-// local work: HEAD is on the default branch or exactly matches a merged PR head.
+// a workbench for reuse. Safe means that switching away cannot lose local work:
+// HEAD is on the default branch or exactly matches a pushed open or merged PR head.
 type ReuseStatus struct {
 	Kind     string         `json:"kind"`
 	Severity string         `json:"severity"`
@@ -155,7 +155,10 @@ func InspectReuseStatus(path string) ReuseStatus {
 	case "closed":
 		return reuseStatus("pr-closed", "warning", label, branch, boolPtr(false), unpushed, pr)
 	case "open":
-		return reuseStatus("pr-open", "warning", fmt.Sprintf("#%v open", payload.Number), branch, boolPtr(false), unpushed, pr)
+		if payload.HeadRefOID != head {
+			return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
+		}
+		return confirmSafe(reuseStatus("pr-open", "safe", fmt.Sprintf("#%v open", payload.Number), branch, boolPtr(false), unpushed, pr))
 	default:
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}

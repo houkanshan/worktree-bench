@@ -101,12 +101,22 @@ func TestInspectReuseStatusAcceptsDefaultBranchOrMergedPR(t *testing.T) {
 	}
 }
 
-func TestInspectReuseStatusRejectsOpenPR(t *testing.T) {
+func TestInspectReuseStatusAcceptsSyncedOpenPR(t *testing.T) {
 	worktree := setupReuseCommands(t)
 	t.Setenv("GIT_SCENARIO", "pushed")
 	t.Setenv("PR_OUTPUT", `{"state":"open","number":43,"headSha":"abc123","headRefOid":"abc123","stale":false}`)
 	status := InspectReuseStatus(worktree)
-	if status.Kind != "pr-open" || status.Severity != "warning" {
+	if status.Kind != "pr-open" || status.Severity != "safe" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestInspectReuseStatusRejectsOpenPRWhoseRemoteHeadMoved(t *testing.T) {
+	worktree := setupReuseCommands(t)
+	t.Setenv("GIT_SCENARIO", "pushed")
+	t.Setenv("PR_OUTPUT", `{"state":"open","number":43,"headSha":"abc123","headRefOid":"newer","stale":false}`)
+	status := InspectReuseStatus(worktree)
+	if status.Kind != "unknown" || status.Severity != "muted" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 }
