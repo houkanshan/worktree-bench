@@ -34,6 +34,7 @@ case "$*" in
     [ "${GIT_SCENARIO:-}" = unpushed ] || [ "${GIT_SCENARIO:-}" = default-ahead ] && echo 2 || echo 0
     exit 0 ;;
   *"rev-parse HEAD") echo abc123; exit 0 ;;
+  *"show -s --format=%cI abc123") echo 2026-01-02T01:00:00Z; exit 0 ;;
 esac
 exit 2
 `)
@@ -88,16 +89,23 @@ func TestInspectReuseStatusIgnoresSuccessfulGitStderr(t *testing.T) {
 func TestInspectReuseStatusAcceptsDefaultBranchOrMergedPR(t *testing.T) {
 	worktree := setupReuseCommands(t)
 	t.Setenv("GIT_SCENARIO", "default")
+	t.Setenv("PR_OUTPUT", `{"state":"merged","number":41,"headSha":"abc123","headRefOid":"abc123","updatedAt":"2026-01-02T02:00:00Z","stale":false}`)
 	status := InspectReuseStatus(worktree)
 	if status.Kind != "no-change" || status.Severity != "safe" {
 		t.Fatalf("unexpected default-branch status: %+v", status)
 	}
+	if status.Activity.CommitAt != "2026-01-02T01:00:00Z" || status.Activity.PRAt != "2026-01-02T02:00:00Z" {
+		t.Fatalf("unexpected default-branch activity: %+v", status.Activity)
+	}
 
 	t.Setenv("GIT_SCENARIO", "pushed")
-	t.Setenv("PR_OUTPUT", `{"state":"merged","number":42,"headSha":"abc123","headRefOid":"abc123","stale":false}`)
+	t.Setenv("PR_OUTPUT", `{"state":"merged","number":42,"headSha":"abc123","headRefOid":"abc123","updatedAt":"2026-01-02T02:00:00Z","mergedAt":"2026-01-02T03:00:00Z","closedAt":"2026-01-02T02:30:00Z","stale":false}`)
 	status = InspectReuseStatus(worktree)
 	if status.Kind != "pr-merged" || status.Severity != "safe" || status.PR == nil || status.PR.State != "merged" {
 		t.Fatalf("unexpected merged-PR status: %+v", status)
+	}
+	if status.Activity.CommitAt != "2026-01-02T01:00:00Z" || status.Activity.PRAt != "2026-01-02T03:00:00Z" {
+		t.Fatalf("unexpected activity: %+v", status.Activity)
 	}
 }
 

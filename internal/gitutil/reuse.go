@@ -25,6 +25,12 @@ type ReuseStatus struct {
 	Dirty    *bool          `json:"dirty"`
 	Unpushed *int           `json:"unpushed"`
 	PR       *ReusePRStatus `json:"pr,omitempty"`
+	Activity ReuseActivity  `json:"activity"`
+}
+
+type ReuseActivity struct {
+	CommitAt string `json:"commitAt,omitempty"`
+	PRAt     string `json:"prAt,omitempty"`
 }
 
 type ReusePRStatus struct {
@@ -38,6 +44,9 @@ type branchPRStatus struct {
 	Error      string `json:"error"`
 	HeadSHA    string `json:"headSha"`
 	HeadRefOID string `json:"headRefOid"`
+	UpdatedAt  string `json:"updatedAt"`
+	MergedAt   string `json:"mergedAt"`
+	ClosedAt   string `json:"closedAt"`
 	Stale      bool   `json:"stale"`
 }
 
@@ -46,6 +55,19 @@ func intPtr(value int) *int    { return &value }
 
 func reuseStatus(state, severity, label, branch string, dirty *bool, unpushed *int, pr *ReusePRStatus) ReuseStatus {
 	return ReuseStatus{Kind: state, Severity: severity, Label: label, Branch: branch, Dirty: dirty, Unpushed: unpushed, PR: pr}
+}
+
+func latestTimestamp(values ...string) string {
+	var latest time.Time
+	var result string
+	for _, value := range values {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err == nil && parsed.After(latest) {
+			latest = parsed
+			result = value
+		}
+	}
+	return result
 }
 
 // InspectReuseStatus performs fresh checks. It deliberately does not use the
@@ -89,12 +111,14 @@ func InspectReuseStatus(path string) ReuseStatus {
 	if err != nil {
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), nil, nil)
 	}
+	commitAt, _ := runGit("show", "-s", "--format=%cI", head)
 	confirmSafe := func(candidate ReuseStatus) ReuseStatus {
 		finalHead, headErr := runGit("rev-parse", "HEAD")
 		finalStatus, statusErr := runGit("status", "--porcelain")
 		if headErr != nil || statusErr != nil || finalHead != head || finalStatus != "" {
 			return reuseStatus("unknown", "muted", "unknown", branch, nil, nil, nil)
 		}
+		candidate.Activity.CommitAt = commitAt
 		return candidate
 	}
 
@@ -110,6 +134,7 @@ func InspectReuseStatus(path string) ReuseStatus {
 		}
 	}
 
+	defaultSafe := false
 	defaultRefs := []string{"refs/heads/main", "refs/heads/master", "refs/remotes/origin/main", "refs/remotes/origin/master"}
 	if remoteDefault, err := runGit("symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil && remoteDefault != "" {
 		defaultRefs = []string{remoteDefault}
@@ -123,27 +148,45 @@ func InspectReuseStatus(path string) ReuseStatus {
 				break
 			}
 		}
-		if upstreamKnown || remotePreserved {
-			return confirmSafe(reuseStatus("no-change", "safe", "no change", branch, boolPtr(false), unpushed, nil))
-		}
+		defaultSafe = upstreamKnown || remotePreserved
+	}
+	defaultStatus := func(prAt string) ReuseStatus {
+		candidate := reuseStatus("no-change", "safe", "no change", branch, boolPtr(false), unpushed, nil)
+		candidate.Activity.PRAt = prAt
+		return confirmSafe(candidate)
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
+		if defaultSafe {
+			return defaultStatus("")
+		}
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
 	out, err := runBranchPRStatus(home, path, branch)
 	if err != nil {
+		if defaultSafe {
+			return defaultStatus("")
+		}
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
 	var payload branchPRStatus
-	if err := json.Unmarshal(out, &payload); err != nil || payload.Error != "" || payload.Stale || payload.HeadSHA != head {
+	payloadValid := json.Unmarshal(out, &payload) == nil && payload.Error == "" && !payload.Stale && payload.HeadSHA == head
+	if defaultSafe {
+		prAt := ""
+		if payloadValid {
+			prAt = latestTimestamp(payload.UpdatedAt, payload.MergedAt, payload.ClosedAt)
+		}
+		return defaultStatus(prAt)
+	}
+	if !payloadValid {
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
 	state := strings.ToLower(payload.State)
 	if state == "" || state == "none" || payload.Number == nil {
 		return reuseStatus("no-pr", "muted", "no PR", branch, boolPtr(false), unpushed, nil)
 	}
+	prAt := latestTimestamp(payload.UpdatedAt, payload.MergedAt, payload.ClosedAt)
 	pr := &ReusePRStatus{Number: payload.Number, State: state}
 	label := fmt.Sprintf("#%v %s", payload.Number, state)
 	switch state {
@@ -151,14 +194,18 @@ func InspectReuseStatus(path string) ReuseStatus {
 		if payload.HeadRefOID != head {
 			return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 		}
-		return confirmSafe(reuseStatus("pr-merged", "safe", label, branch, boolPtr(false), unpushed, pr))
+		candidate := reuseStatus("pr-merged", "safe", label, branch, boolPtr(false), unpushed, pr)
+		candidate.Activity.PRAt = prAt
+		return confirmSafe(candidate)
 	case "closed":
 		return reuseStatus("pr-closed", "warning", label, branch, boolPtr(false), unpushed, pr)
 	case "open":
 		if payload.HeadRefOID != head {
 			return reuseStatus("pr-open", "warning", fmt.Sprintf("#%v open · remote changed", payload.Number), branch, boolPtr(false), unpushed, pr)
 		}
-		return confirmSafe(reuseStatus("pr-open", "safe", fmt.Sprintf("#%v open", payload.Number), branch, boolPtr(false), unpushed, pr))
+		candidate := reuseStatus("pr-open", "safe", fmt.Sprintf("#%v open", payload.Number), branch, boolPtr(false), unpushed, pr)
+		candidate.Activity.PRAt = prAt
+		return confirmSafe(candidate)
 	default:
 		return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
 	}
