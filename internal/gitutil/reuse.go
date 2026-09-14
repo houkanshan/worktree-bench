@@ -198,7 +198,12 @@ func InspectReuseStatus(path string) ReuseStatus {
 		candidate.Activity.PRAt = prAt
 		return confirmSafe(candidate)
 	case "closed":
-		return reuseStatus("pr-closed", "warning", label, branch, boolPtr(false), unpushed, pr)
+		if payload.HeadRefOID != head {
+			return reuseStatus("pr-closed", "warning", fmt.Sprintf("#%v closed · remote changed", payload.Number), branch, boolPtr(false), unpushed, pr)
+		}
+		candidate := reuseStatus("pr-closed", "safe", label, branch, boolPtr(false), unpushed, pr)
+		candidate.Activity.PRAt = prAt
+		return confirmSafe(candidate)
 	case "open":
 		if payload.HeadRefOID != head {
 			return reuseStatus("pr-open", "warning", fmt.Sprintf("#%v open · remote changed", payload.Number), branch, boolPtr(false), unpushed, pr)

@@ -119,6 +119,26 @@ func TestInspectReuseStatusAcceptsSyncedOpenPR(t *testing.T) {
 	}
 }
 
+func TestInspectReuseStatusAcceptsSyncedClosedPR(t *testing.T) {
+	worktree := setupReuseCommands(t)
+	t.Setenv("GIT_SCENARIO", "pushed")
+	t.Setenv("PR_OUTPUT", `{"state":"closed","number":44,"headSha":"abc123","headRefOid":"abc123","updatedAt":"2026-01-02T02:00:00Z","stale":false}`)
+	status := InspectReuseStatus(worktree)
+	if status.Kind != "pr-closed" || status.Severity != "safe" || status.Activity.PRAt != "2026-01-02T02:00:00Z" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestInspectReuseStatusRejectsClosedPRWhoseRemoteHeadMoved(t *testing.T) {
+	worktree := setupReuseCommands(t)
+	t.Setenv("GIT_SCENARIO", "pushed")
+	t.Setenv("PR_OUTPUT", `{"state":"closed","number":44,"headSha":"abc123","headRefOid":"older","stale":false}`)
+	status := InspectReuseStatus(worktree)
+	if status.Kind != "pr-closed" || status.Severity != "warning" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
 func TestInspectReuseStatusRejectsOpenPRWhoseRemoteHeadMoved(t *testing.T) {
 	worktree := setupReuseCommands(t)
 	t.Setenv("GIT_SCENARIO", "pushed")
