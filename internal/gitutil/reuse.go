@@ -16,7 +16,8 @@ import (
 
 // ReuseStatus is the fresh, machine-readable safety status used when selecting
 // a workbench for reuse. Safe means that switching away cannot lose local work:
-// HEAD is on the default branch or exactly matches a pushed open or merged PR head.
+// HEAD is on the default branch, matches a pushed open/closed PR head, or is
+// contained in a merged PR head (proved using local Git objects only).
 type ReuseStatus struct {
 	Kind     string         `json:"kind"`
 	Severity string         `json:"severity"`
@@ -192,7 +193,12 @@ func InspectReuseStatus(path string) ReuseStatus {
 	switch state {
 	case "merged":
 		if payload.HeadRefOID != head {
-			return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
+			// Automation may append commits before merging. Preserve the exact-head
+			// fast path; otherwise require local proof that all local history is
+			// in the merged PR. Missing objects or any Git failure stay unknown.
+			if _, err := runGit("merge-base", "--is-ancestor", head, payload.HeadRefOID); err != nil {
+				return reuseStatus("unknown", "muted", "unknown", branch, boolPtr(false), unpushed, nil)
+			}
 		}
 		candidate := reuseStatus("pr-merged", "safe", label, branch, boolPtr(false), unpushed, pr)
 		candidate.Activity.PRAt = prAt

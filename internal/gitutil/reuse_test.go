@@ -1,8 +1,11 @@
 package gitutil
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -189,6 +192,65 @@ echo '{"state":"none"}'
 		if err != nil {
 			t.Fatalf("concurrent helper failed: %v", err)
 		}
+	}
+}
+
+func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
+	for _, scenario := range []string{"descendant", "older", "diverged", "missing", "empty"} {
+		t.Run(scenario, func(t *testing.T) {
+			originalPath := os.Getenv("PATH")
+			worktree := setupReuseCommands(t)
+			t.Setenv("PATH", originalPath)
+			git := func(args ...string) string {
+				t.Helper()
+				cmd := exec.Command("git", append([]string{"-C", worktree}, args...)...)
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("git %v: %v: %s", args, err, out)
+				}
+				return strings.TrimSpace(string(out))
+			}
+			git("init", "-b", "feature/test")
+			git("config", "user.name", "Reuse Test")
+			git("config", "user.email", "reuse@example.test")
+			git("config", "commit.gpgsign", "false")
+			git("commit", "--allow-empty", "-m", "base")
+			base := git("rev-parse", "HEAD")
+			git("commit", "--allow-empty", "-m", "local work")
+			head := git("rev-parse", "HEAD")
+			git("checkout", "-b", "merged-pr")
+			git("commit", "--allow-empty", "-m", "automatic formatting")
+			prHead := git("rev-parse", "HEAD")
+			git("checkout", "feature/test")
+			switch scenario {
+			case "older":
+				prHead = base
+			case "diverged":
+				git("checkout", "--detach", base)
+				git("commit", "--allow-empty", "-m", "different work")
+				prHead = git("rev-parse", "HEAD")
+				git("checkout", "feature/test")
+			case "missing":
+				prHead = strings.Repeat("f", 40)
+			case "empty":
+				prHead = ""
+			}
+			payload, err := json.Marshal(branchPRStatus{
+				Number: 42, State: "merged", HeadSHA: head, HeadRefOID: prHead,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PR_OUTPUT", string(payload))
+			status := InspectReuseStatus(worktree)
+			if scenario == "descendant" {
+				if status.Kind != "pr-merged" || status.Severity != "safe" || status.PR == nil {
+					t.Fatalf("merged descendant should be safe: %+v", status)
+				}
+			} else if status.Kind != "unknown" || status.Severity != "muted" {
+				t.Fatalf("unproved ancestry should remain unknown: %+v", status)
+			}
+		})
 	}
 }
 
