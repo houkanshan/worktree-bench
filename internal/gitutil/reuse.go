@@ -83,6 +83,8 @@ func InspectReuseStatus(path string) ReuseStatus {
 		defer cancel()
 		commandArgs := append([]string{"-C", path}, args...)
 		cmd := exec.CommandContext(ctx, "git", commandArgs...)
+		// Safety inspection must not fetch missing objects from promisor remotes.
+		cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1")
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()

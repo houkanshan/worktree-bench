@@ -196,7 +196,7 @@ echo '{"state":"none"}'
 }
 
 func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
-	for _, scenario := range []string{"descendant", "older", "diverged", "missing", "empty"} {
+	for _, scenario := range []string{"descendant", "older", "diverged", "missing", "empty", "promisor"} {
 		t.Run(scenario, func(t *testing.T) {
 			originalPath := os.Getenv("PATH")
 			worktree := setupReuseCommands(t)
@@ -222,7 +222,22 @@ func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
 			git("commit", "--allow-empty", "-m", "automatic formatting")
 			prHead := git("rev-parse", "HEAD")
 			git("checkout", "feature/test")
+			fetchMarker := filepath.Join(t.TempDir(), "fetch-attempted")
 			switch scenario {
+			case "promisor":
+				remote := filepath.Join(t.TempDir(), "remote.git")
+				git("clone", "--bare", "--no-hardlinks", worktree, remote)
+				git("remote", "add", "origin", remote)
+				git("config", "remote.origin.promisor", "true")
+				git("config", "remote.origin.partialclonefilter", "blob:none")
+				uploadPack := filepath.Join(t.TempDir(), "upload-pack")
+				writeExecutable(t, uploadPack, "touch \"$FETCH_MARKER\"\nexec git upload-pack \"$@\"\n")
+				t.Setenv("FETCH_MARKER", fetchMarker)
+				t.Setenv("GIT_NO_LAZY_FETCH", "0")
+				git("config", "remote.origin.uploadpack", uploadPack)
+				if err := os.Remove(filepath.Join(worktree, ".git", "objects", prHead[:2], prHead[2:])); err != nil {
+					t.Fatal(err)
+				}
 			case "older":
 				prHead = base
 			case "diverged":
@@ -249,6 +264,16 @@ func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
 				}
 			} else if status.Kind != "unknown" || status.Severity != "muted" {
 				t.Fatalf("unproved ancestry should remain unknown: %+v", status)
+			}
+			if scenario == "promisor" {
+				if _, err := os.Stat(fetchMarker); !os.IsNotExist(err) {
+					t.Fatalf("safety inspection contacted promisor remote: %v", err)
+				}
+				// Control: the same check without WTB's protection must lazy-fetch.
+				git("merge-base", "--is-ancestor", head, prHead)
+				if _, err := os.Stat(fetchMarker); err != nil {
+					t.Fatalf("control did not contact promisor remote: %v", err)
+				}
 			}
 		})
 	}
