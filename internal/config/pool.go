@@ -156,6 +156,9 @@ func ConfigDir(repoRoot string) (string, error) {
 
 func resolveConfigDir(repoRoot string) (string, string, error) {
 	mainRoot, err := gitutil.MainWorktreeRoot(repoRoot)
+	if errors.Is(err, gitutil.ErrMainWorktreeUnknown) {
+		return "", "", err
+	}
 	if err == nil && mainRoot != "" {
 		if _, statErr := os.Stat(mainRoot); statErr == nil {
 			return filepath.Join(mainRoot, ".worktree-bench"), mainRoot, nil

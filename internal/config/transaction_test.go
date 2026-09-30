@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"worktree-bench/internal/gitutil"
 )
 
 func transactionRepo(t *testing.T) string {
@@ -112,5 +114,63 @@ func TestRemovedNamePrefixDoesNotAffectBranchPrefix(t *testing.T) {
 	}
 	if _, present := saved["worktree_name_prefix"]; present {
 		t.Fatal("removed setting was persisted")
+	}
+}
+
+func TestUnconfiguredSeparateGitDirNeverCreatesAlternativePool(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	repo, metadata, child := filepath.Join(root, "project"), filepath.Join(root, "metadata"), filepath.Join(root, "child")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "--separate-git-dir", metadata},
+		{"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"},
+		{"commit", "--allow-empty", "-m", "base"},
+		{"worktree", "add", "-b", "child", child},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	settings, err := LoadSettings(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdatePool(repo, settings, func(pool Pool) (Pool, error) {
+		pool.Benches = append(pool.Benches, Workbench{ID: "main"})
+		return pool, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{SettingsFileName, PoolFileName} {
+		if _, err := os.Stat(filepath.Join(repo, ".worktree-bench", name)); err != nil {
+			t.Fatalf("main configuration missing: %v", err)
+		}
+	}
+	if _, err := LoadSettings(child); !errors.Is(err, gitutil.ErrMainWorktreeUnknown) {
+		t.Fatalf("child settings load: %v", err)
+	}
+	if err := SaveSettings(child, settings); !errors.Is(err, gitutil.ErrMainWorktreeUnknown) {
+		t.Fatalf("child settings save: %v", err)
+	}
+	if _, err := LoadPool(child, settings); !errors.Is(err, gitutil.ErrMainWorktreeUnknown) {
+		t.Fatalf("child pool load: %v", err)
+	}
+	if _, err := UpdatePool(child, settings, func(pool Pool) (Pool, error) {
+		t.Error("ambiguous repository reached mutation callback")
+		return pool, nil
+	}); !errors.Is(err, gitutil.ErrMainWorktreeUnknown) {
+		t.Fatalf("child pool update: %v", err)
+	}
+	for _, dir := range []string{filepath.Join(metadata, ".worktree-bench"), filepath.Join(child, ".worktree-bench"), filepath.Join(root, "home", ".worktree-bench")} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("misplaced configuration at %s: %v", dir, err)
+		}
+	}
+	pool, err := LoadPool(repo, settings)
+	if err != nil || len(pool.Benches) != 1 || pool.Benches[0].ID != "main" {
+		t.Fatalf("main pool changed: %+v, %v", pool, err)
 	}
 }

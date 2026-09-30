@@ -204,6 +204,8 @@ Settings and pool data are stored in the repo root under `.worktree-bench/`:
 - `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`
 - `pool.json`: workbench metadata
 
+For repositories initialized with `git init --separate-git-dir`, commands from the main worktree keep configuration there. Commands from linked children require `core.worktree` in the common Git config to identify that main project; without it they fail without writing another pool.
+
 Defaults are inferred from lockfiles and `package.json` (when available).
 Auto-generated names use the main worktree's project basename, even when invoked from a child worktree: `repo-{n}` for large, `repo-m-{n}` for medium, and `repo-s-{n}` for small. Each series uses its highest current numeric suffix plus one, starting at 1; deleted gaps are not filled while a higher suffix remains. Registered names, filesystem entries (including leftovers), and Git worktree registrations reserve names. Existing benches are not renamed, and explicit `--name` is preserved. The former `worktree_name_prefix` setting is ignored and no longer written; `branch_prefix` is unchanged.
 

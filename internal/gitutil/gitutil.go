@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,10 @@ func RepoRoot() (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// ErrMainWorktreeUnknown means Git metadata cannot identify the main working
+// tree. Callers must not choose another configuration location in this case.
+var ErrMainWorktreeUnknown = errors.New("cannot identify main worktree; configure core.worktree in the common Git config")
 
 // MainWorktreeRoot returns the root of the main worktree for the repository.
 func MainWorktreeRoot(path string) (string, error) {
@@ -33,6 +38,11 @@ func MainWorktreeRoot(path string) (string, error) {
 		if !filepath.IsAbs(root) {
 			root = filepath.Join(commonDir, root)
 		}
+		commonInfo, commonErr := os.Stat(commonDir)
+		rootInfo, rootErr := os.Stat(root)
+		if commonErr == nil && rootErr == nil && os.SameFile(commonInfo, rootInfo) {
+			return "", ErrMainWorktreeUnknown
+		}
 		return filepath.Clean(root), nil
 	}
 	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
@@ -47,6 +57,30 @@ func MainWorktreeRoot(path string) (string, error) {
 	root, ok := strings.CutPrefix(field, "worktree ")
 	if !ok || root == "" {
 		return "", fmt.Errorf("git worktree list: missing main worktree")
+	}
+	commonInfo, commonErr := os.Stat(commonDir)
+	rootInfo, rootErr := os.Stat(root)
+	if commonErr == nil && rootErr == nil && os.SameFile(commonInfo, rootInfo) {
+		// An unconfigured separate gitdir reports metadata as its main entry.
+		// Only a main-worktree invocation can recover the real working tree:
+		// its gitdir equals the common gitdir, unlike a linked child's gitdir.
+		out, err = exec.Command("git", "-C", path, "rev-parse", "--absolute-git-dir").CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("%w: git rev-parse --absolute-git-dir: %v: %s", ErrMainWorktreeUnknown, err, strings.TrimSpace(string(out)))
+		}
+		gitInfo, err := os.Stat(strings.TrimSpace(string(out)))
+		if err != nil || !os.SameFile(commonInfo, gitInfo) {
+			return "", ErrMainWorktreeUnknown
+		}
+		out, err = exec.Command("git", "-C", path, "rev-parse", "--show-toplevel").CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("%w: git rev-parse --show-toplevel: %v: %s", ErrMainWorktreeUnknown, err, strings.TrimSpace(string(out)))
+		}
+		root = strings.TrimSpace(string(out))
+		rootInfo, err = os.Stat(root)
+		if err != nil || os.SameFile(commonInfo, rootInfo) {
+			return "", ErrMainWorktreeUnknown
+		}
 	}
 	return filepath.Clean(root), nil
 }
