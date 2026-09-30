@@ -37,11 +37,8 @@ func newDeleteCommand() *cobra.Command {
 			}
 
 			force, _ := cmd.Flags().GetBool("force")
-			updated, message, err := runDeleteFlow(repoRoot, pool, result.BenchID, force)
+			_, message, err := runDeleteFlow(repoRoot, settings, result.BenchID, force)
 			if err != nil {
-				return err
-			}
-			if err := config.SavePool(repoRoot, updated); err != nil {
 				return err
 			}
 			invalidateStatusCacheEntries(repoRoot, result.BenchID)

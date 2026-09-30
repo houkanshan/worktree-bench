@@ -13,8 +13,16 @@
   - Each workbench tracks `id`, `name`, `type`, `path`, `created_at`, `last_setup`, and optional dev server metadata.
 - **Settings**
   - Stored in `.worktree-bench/config.json`.
-  - Includes `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`, and `worktree_name_prefix`.
+  - Includes `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`.
   - Defaults are inferred from lockfiles / `package.json` and can be edited.
+
+## Pool mutation ownership
+- `internal/bench` public create/adopt/delete operations own persistence through `config.UpdatePool`; CLI and dashboard callers never save a previously loaded snapshot.
+- `UpdatePool` takes a repository-scoped advisory `flock` on `.worktree-bench/pool.lock`, reloads the pool, performs the mutation, and atomically saves before releasing the lock. The lock file is retained so concurrent processes share one inode. The OS releases the lock on exit, including crashes.
+- Prompts finish before transactions start. Setup/dev/init side effects remain inside the transaction; other mutations wait for those commands. Read-only pool loads never create or overwrite registry files.
+- Main and child worktrees share the main worktree's configuration directory. Git's first porcelain worktree entry identifies ordinary main roots; `core.worktree` identifies submodules and configured separate gitdirs.
+- Automatic names are `<main-project>-{n}` (large), `<main-project>-m-{n}` (medium), and `<main-project>-s-{n}` (small), with independent current maximum suffixes across registry names, filesystem entries, and Git worktree registrations. Existing and explicit names remain unchanged.
+- The lock protects cooperating WTB registry writers, not external Git commands or worktree reuse/checkout leases. A crash can leave an unregistered worktree; subsequent automatic naming avoids its name.
 
 ## Runtime flow
 - **dashboard (no args)**

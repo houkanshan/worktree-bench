@@ -59,8 +59,7 @@ func TestCreateWorkbenchChecksOutTargetBeforeSetup(t *testing.T) {
 		SetupCmd:     "test -f target-only.txt",
 		BranchPrefix: "bench/",
 	}
-	pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir}
-	_, created, _, err := CreateWorkbench(repo, settings, pool, CreateInput{
+	_, created, _, err := CreateWorkbench(repo, settings, CreateInput{
 		Type:           config.TypeMedium,
 		Name:           "feature-bench",
 		BaseBranch:     "master",
@@ -90,8 +89,7 @@ func TestCreateWorkbenchReturnsExistingCheckoutAndCleansTemporaryBench(t *testin
 		SetupCmd:     "touch " + setupMarker,
 		BranchPrefix: "bench/",
 	}
-	pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir}
-	updated, created, targetPath, err := CreateWorkbench(repo, settings, pool, CreateInput{
+	updated, created, targetPath, err := CreateWorkbench(repo, settings, CreateInput{
 		Type:           config.TypeMedium,
 		Name:           "unneeded-bench",
 		BaseBranch:     "master",
@@ -121,9 +119,8 @@ func TestCreateWorkbenchValidatesDerivedPathBeforeFilesystemChanges(t *testing.T
 	worktreesDir := filepath.Join(root, "worktrees")
 	outside := filepath.Join(root, "outside")
 	settings := config.Settings{WorktreesDir: worktreesDir, BranchPrefix: "bench/"}
-	pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir}
 	validated := ""
-	_, created, _, err := CreateWorkbench(repo, settings, pool, CreateInput{
+	_, created, _, err := CreateWorkbench(repo, settings, CreateInput{
 		Type:       config.TypeSmall,
 		Name:       "../outside",
 		BaseBranch: "master",
@@ -166,8 +163,7 @@ func TestCreateWorkbenchFailureRemovesWorktreeAndGeneratedBranch(t *testing.T) {
 				InitCmd:      test.initCmd,
 				BranchPrefix: "bench/",
 			}
-			pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir, Benches: []config.Workbench{}}
-			updated, created, _, err := CreateWorkbench(repo, settings, pool, CreateInput{
+			updated, created, _, err := CreateWorkbench(repo, settings, CreateInput{
 				Type:           test.benchType,
 				Name:           "failed-bench",
 				BaseBranch:     "master",
@@ -211,8 +207,7 @@ func TestCreateWorkbenchInitFailureStopsDevProcess(t *testing.T) {
 		InitCmd:      "sleep 0.1; false",
 		BranchPrefix: "bench/",
 	}
-	pool := config.Pool{Version: 1, RepoRoot: repo, WorktreesDir: worktreesDir, Benches: []config.Workbench{}}
-	_, _, _, err := CreateWorkbench(repo, settings, pool, CreateInput{
+	_, _, _, err := CreateWorkbench(repo, settings, CreateInput{
 		Type:       config.TypeLarge,
 		Name:       "failed-dev-bench",
 		BaseBranch: "master",

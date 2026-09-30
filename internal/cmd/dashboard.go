@@ -106,9 +106,6 @@ func runDashboardWithOptions(cmd *cobra.Command, args []string, opts dashboardOp
 			return err
 		}
 		if flow.changed {
-			if err := config.SavePool(repoRoot, flow.pool); err != nil {
-				return err
-			}
 			invalidateStatusCacheEntries(repoRoot, flow.touchedIDs...)
 			invalidateStatusCachePaths(repoRoot, flow.touchedPaths...)
 		}
@@ -148,11 +145,8 @@ func runDashboardWithOptions(cmd *cobra.Command, args []string, opts dashboardOp
 		invalidateStatusCacheForPaths(repoRoot, pool, repoRoot, selected.Path)
 		return emitDirective(cmd, targetPath)
 	case ui.DashboardActionDelete:
-		updated, message, err := runDeleteFlow(repoRoot, pool, result.BenchID, false)
+		_, message, err := runDeleteFlow(repoRoot, settings, result.BenchID, false)
 		if err != nil {
-			return err
-		}
-		if err := config.SavePool(repoRoot, updated); err != nil {
 			return err
 		}
 		invalidateStatusCacheEntries(repoRoot, result.BenchID)
@@ -254,7 +248,7 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 			QuietOutput:    direct.JSON,
 			ValidatePath:   func(candidate string) error { return requireAllowedPath(candidate, direct.AllowedRoots) },
 		}
-		updated, created, targetPath, err := bench.CreateWorkbench(repoRoot, settings, pool, input)
+		updated, created, targetPath, err := bench.CreateWorkbench(repoRoot, settings, input)
 		if err != nil {
 			return err
 		}
@@ -263,9 +257,6 @@ func runDirectSelection(cmd *cobra.Command, repoRoot string, settings config.Set
 				return nil
 			}
 			return emitSelection(cmd, config.Workbench{}, targetPath, false, direct.JSON)
-		}
-		if err := config.SavePool(repoRoot, updated); err != nil {
-			return err
 		}
 		invalidateStatusCacheEntries(repoRoot, created.ID)
 		invalidateStatusCachePaths(repoRoot, created.Path)

@@ -59,12 +59,11 @@ type DevServer struct {
 }
 
 type Settings struct {
-	WorktreesDir       string `json:"worktrees_dir"`
-	SetupCmd           string `json:"setup_cmd"`
-	DevCmd             string `json:"dev_cmd"`
-	InitCmd            string `json:"init_cmd"`
-	BranchPrefix       string `json:"branch_prefix"`
-	WorktreeNamePrefix string `json:"worktree_name_prefix"`
+	WorktreesDir string `json:"worktrees_dir"`
+	SetupCmd     string `json:"setup_cmd"`
+	DevCmd       string `json:"dev_cmd"`
+	InitCmd      string `json:"init_cmd"`
+	BranchPrefix string `json:"branch_prefix"`
 }
 
 func LoadSettings(repoRoot string) (Settings, error) {
@@ -116,12 +115,6 @@ func LoadPool(repoRoot string, settings Settings) (Pool, error) {
 	poolPath := filepath.Join(configDir, PoolFileName)
 	if _, err := os.Stat(poolPath); errors.Is(err, os.ErrNotExist) {
 		pool := Pool{Version: 1, RepoRoot: defaultsRoot, WorktreesDir: settings.WorktreesDir, Benches: []Workbench{}}
-		if err := os.MkdirAll(configDir, 0o755); err != nil {
-			return Pool{}, err
-		}
-		if err := writeJSON(poolPath, pool); err != nil {
-			return Pool{}, err
-		}
 		return pool, nil
 	}
 
@@ -143,7 +136,7 @@ func LoadPool(repoRoot string, settings Settings) (Pool, error) {
 	return pool, nil
 }
 
-func SavePool(repoRoot string, pool Pool) error {
+func savePool(repoRoot string, pool Pool) error {
 	configDir, defaultsRoot, err := resolveConfigDir(repoRoot)
 	if err != nil {
 		return err

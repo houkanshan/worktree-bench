@@ -135,7 +135,7 @@ Checkout reconciles concurrent worktree ownership and reports where the target e
 JSON selection output has the shape:
 
 ```json
-{"benchId":"wb-123","name":"repo-l-1","type":"large","path":"/path/to/repo-l-1","created":false}
+{"benchId":"wb-123","name":"repo-1","type":"large","path":"/path/to/repo-1","created":false}
 ```
 
 ### Create a workbench
@@ -201,11 +201,13 @@ If you followed the shell setup above, you can just run `wtb swap`.
 
 ## Configuration
 Settings and pool data are stored in the repo root under `.worktree-bench/`:
-- `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`, `worktree_name_prefix`
+- `config.json`: `worktrees_dir`, `setup_cmd`, `dev_cmd`, `init_cmd`, `branch_prefix`
 - `pool.json`: workbench metadata
 
 Defaults are inferred from lockfiles and `package.json` (when available).
-Auto-generated workbench names use `{worktree_name_prefix}{size-short}-{number}`, where size short is `l`, `m`, or `s`.
+Auto-generated names use the main worktree's project basename, even when invoked from a child worktree: `repo-{n}` for large, `repo-m-{n}` for medium, and `repo-s-{n}` for small. Each series uses its highest current numeric suffix plus one, starting at 1; deleted gaps are not filled while a higher suffix remains. Registered names, filesystem entries (including leftovers), and Git worktree registrations reserve names. Existing benches are not renamed, and explicit `--name` is preserved. The former `worktree_name_prefix` setting is ignored and no longer written; `branch_prefix` is unchanged.
+
+Create, adopt, and delete serialize registry mutations across WTB processes using `.worktree-bench/pool.lock`. The pool is reloaded after acquiring the lock, and the lock is held through worktree/setup/init effects and the atomic registry save. TUI prompts and read-only status do not hold this lock. Other WTB mutations wait while setup/init runs. Locks are released automatically on process exit; interrupted operations may leave unregistered worktrees, which future automatic names avoid. External Git commands do not participate in this lock.
 
 
 ## Pi extension

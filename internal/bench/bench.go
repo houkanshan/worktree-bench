@@ -85,7 +85,7 @@ func EnsureSettings(repoRoot string) (config.Settings, error) {
 	return settings, nil
 }
 
-func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input CreateInput) (config.Pool, *config.Workbench, string, error) {
+func createWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input CreateInput) (config.Pool, *config.Workbench, string, error) {
 	benchType := config.NormalizeWorkbenchType(input.Type)
 	if !config.IsWorkbenchType(benchType) {
 		return pool, nil, "", fmt.Errorf("unsupported workbench type %q", input.Type)
@@ -134,7 +134,11 @@ func CreateWorkbench(repoRoot string, settings config.Settings, pool config.Pool
 	}
 
 	if input.Name == "" {
-		input.Name = nextName(pool, benchType, settings.WorktreeNamePrefix)
+		var err error
+		input.Name, err = nextName(repoRoot, settings.WorktreesDir, pool, benchType)
+		if err != nil {
+			return pool, nil, "", err
+		}
 	}
 	benchPath := filepath.Join(settings.WorktreesDir, input.Name)
 	if input.ValidatePath != nil {
@@ -295,30 +299,50 @@ func findBench(pool config.Pool, id string) *config.Workbench {
 	return nil
 }
 
-func nextName(pool config.Pool, benchType string, prefix string) string {
-	shortName := config.WorkbenchTypeShortName(benchType)
-	if shortName == "" {
-		shortName = benchType
+func nextName(repoRoot, worktreesDir string, pool config.Pool, benchType string) (string, error) {
+	mainRoot, err := gitutil.MainWorktreeRoot(repoRoot)
+	if err != nil {
+		return "", err
 	}
-	namePrefix := fmt.Sprintf("%s%s-", prefix, shortName)
-	next := 1
+	prefix := filepath.Base(mainRoot) + "-"
+	if benchType != config.TypeLarge {
+		prefix += config.WorkbenchTypeShortName(benchType) + "-"
+	}
+	// Include leftovers in the high-water mark, not just registered benches.
+	names := make(map[string]bool)
 	for _, bench := range pool.Benches {
-		if config.NormalizeWorkbenchType(bench.Type) != benchType {
+		names[bench.Name] = true
+		names[filepath.Base(bench.Path)] = true
+	}
+	entries, err := os.ReadDir(worktreesDir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	for _, entry := range entries {
+		names[entry.Name()] = true
+	}
+	worktrees, err := listWorktrees(repoRoot)
+	if err != nil {
+		return "", err
+	}
+	for _, worktree := range worktrees {
+		names[filepath.Base(worktree.Path)] = true
+	}
+	next := 1
+	for name := range names {
+		if !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		if !strings.HasPrefix(bench.Name, namePrefix) {
-			continue
-		}
-		suffix := strings.TrimPrefix(bench.Name, namePrefix)
+		suffix := strings.TrimPrefix(name, prefix)
 		index, err := strconv.Atoi(suffix)
-		if err != nil {
-			continue
-		}
-		if index >= next {
+		if err == nil && index >= next {
+			if index == int(^uint(0)>>1) {
+				return "", fmt.Errorf("workbench name sequence exhausted: %s", prefix)
+			}
 			next = index + 1
 		}
 	}
-	return fmt.Sprintf("%s%d", namePrefix, next)
+	return fmt.Sprintf("%s%d", prefix, next), nil
 }
 
 func fileExists(path string) bool {
@@ -511,8 +535,8 @@ type DeleteInput struct {
 	Force   bool
 }
 
-// AdoptWorkbench registers the current worktree as a workbench.
-func AdoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input AdoptInput) (config.Pool, *config.Workbench, error) {
+// adoptWorkbench registers the current worktree as a workbench.
+func adoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool, input AdoptInput) (config.Pool, *config.Workbench, error) {
 	benchType := config.NormalizeWorkbenchType(input.Type)
 	if !config.IsWorkbenchType(benchType) {
 		return pool, nil, fmt.Errorf("unsupported workbench type %q", input.Type)
@@ -562,8 +586,8 @@ func AdoptWorkbench(repoRoot string, settings config.Settings, pool config.Pool,
 	return pool, &newBench, nil
 }
 
-// DeleteWorkbench removes a workbench from the pool and removes its worktree directory.
-func DeleteWorkbench(repoRoot string, pool config.Pool, input DeleteInput) (config.Pool, *config.Workbench, error) {
+// deleteWorkbench removes a workbench from the pool and removes its worktree directory.
+func deleteWorkbench(repoRoot string, pool config.Pool, input DeleteInput) (config.Pool, *config.Workbench, error) {
 	benchIndex := -1
 	for i, bench := range pool.Benches {
 		if bench.ID == input.BenchID {

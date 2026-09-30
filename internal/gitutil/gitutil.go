@@ -24,20 +24,31 @@ func MainWorktreeRoot(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	commonDir = filepath.Clean(commonDir)
-	if filepath.Base(commonDir) == ".git" {
-		return filepath.Dir(commonDir), nil
-	}
-	sep := string(filepath.Separator)
-	needle := sep + ".git" + sep
-	if idx := strings.Index(commonDir, needle); idx != -1 {
-		root := commonDir[:idx]
-		if root == "" {
-			root = sep
+	// Submodules (and configured separate gitdirs) record the main worktree
+	// relative to their common gitdir. Git's worktree list reports the gitdir
+	// itself for these repositories, not the working tree.
+	out, err := exec.Command("git", "--git-dir", commonDir, "config", "--get", "core.worktree").CombinedOutput()
+	if err == nil {
+		root := strings.TrimSpace(string(out))
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(commonDir, root)
 		}
-		return root, nil
+		return filepath.Clean(root), nil
 	}
-	return path, nil
+	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+		return "", fmt.Errorf("git config --get core.worktree: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	// Ordinary repositories list the main worktree first, even from a child.
+	out, err = exec.Command("git", "-C", path, "worktree", "list", "--porcelain", "-z").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git worktree list: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	field, _, _ := strings.Cut(string(out), "\x00")
+	root, ok := strings.CutPrefix(field, "worktree ")
+	if !ok || root == "" {
+		return "", fmt.Errorf("git worktree list: missing main worktree")
+	}
+	return filepath.Clean(root), nil
 }
 
 func Branch(path string) (string, error) {
