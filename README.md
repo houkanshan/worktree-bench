@@ -120,7 +120,7 @@ Shortcuts:
 ./worktree-bench checkout feature/example --path /path/to/repo --allowed-root /path/to --json
 ```
 
-Target resolution returns an immutable commit, a branch name, and an existing authorized worktree when present:
+Target resolution returns an immutable commit, a branch name, and an existing authorized worktree when it owns that branch at the resolved commit. Detached worktrees at the same commit are ignored, so review worktrees do not redirect checkout away from the selected workbench:
 
 ```json
 {"kind":"branch","commit":"0123456789abcdef...","branchName":"feature/example","existingPath":"/path/to/existing-worktree"}

@@ -49,6 +49,8 @@ func TestCreateWorkbenchChecksOutTargetBeforeSetup(t *testing.T) {
 	}
 	gitTest(t, repo, "add", "target-only.txt")
 	gitTest(t, repo, "commit", "-m", "feature target")
+	detachedPath := filepath.Join(t.TempDir(), "review-worktree")
+	gitTest(t, repo, "worktree", "add", "--detach", detachedPath, "HEAD")
 	gitTest(t, repo, "checkout", "master")
 
 	worktreesDir := filepath.Join(filepath.Dir(repo), "worktrees")

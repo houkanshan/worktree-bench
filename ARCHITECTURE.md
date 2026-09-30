@@ -30,7 +30,7 @@
   - Emits shell directives (`cd 'path'`) to stdout or a directive file.
 - **checkout / resolve-target**
   - Resolves branches and pull requests to an immutable commit and branch name.
-  - Enumerates Git worktrees structurally; checkout returns an existing authorized worktree instead of failing when it already owns the target.
+  - Enumerates Git worktrees structurally; checkout returns an existing authorized worktree instead of failing when it already owns the target branch at the resolved commit. Detached worktrees at the same commit do not own the branch and are never reuse candidates.
   - Rechecks worktree ownership after a checkout failure to reconcile races without parsing Git stderr.
 - **status**
   - TUI shows branch, PR (via `gh`), and uncommitted line counts.

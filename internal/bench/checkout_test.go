@@ -97,6 +97,57 @@ fi
 	}
 }
 
+func TestCheckoutTargetIgnoresDetachedWorktrees(t *testing.T) {
+	for _, target := range []string{"feature", "#42"} {
+		t.Run(target, func(t *testing.T) {
+			repo := initializedRepo(t)
+			gitTest(t, repo, "branch", "feature")
+			commit := gitTest(t, repo, "rev-parse", "HEAD")
+			detachedPath := filepath.Join(t.TempDir(), "review-worktree")
+			gitTest(t, repo, "worktree", "add", "--detach", detachedPath, commit)
+			benchPath := filepath.Join(t.TempDir(), "selected-bench")
+			gitTest(t, repo, "worktree", "add", "-b", "bench", benchPath, "master")
+
+			binDir := t.TempDir()
+			script := `#!/bin/sh
+if [ "$1 $2" = "pr view" ]; then
+  printf '{"headRefName":"feature","headRefOid":"%s","isCrossRepository":false,"number":42,"url":"https://github.com/owner/repo/pull/42"}\n' "$WTB_HEAD"
+elif [ "$1 $2" = "pr checkout" ]; then
+  exec git checkout feature
+else
+  exit 1
+fi
+`
+			if err := os.WriteFile(filepath.Join(binDir, "gh"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("WTB_HEAD", commit)
+
+			resolved, err := ResolveTarget(repo, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.ExistingPath != "" {
+				t.Fatalf("detached review worktree was returned: %s", resolved.ExistingPath)
+			}
+			result, err := CheckoutTarget(benchPath, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Path != benchPath || result.Disposition != "checkedOut" {
+				t.Fatalf("checkout result = %#v, want checkout in selected bench %s", result, benchPath)
+			}
+			if branch := gitTest(t, benchPath, "branch", "--show-current"); branch != "feature" {
+				t.Fatalf("selected bench branch = %q, want feature", branch)
+			}
+			if branch := gitTest(t, detachedPath, "branch", "--show-current"); branch != "" {
+				t.Fatalf("review worktree is no longer detached: %q", branch)
+			}
+		})
+	}
+}
+
 func TestResolveTargetIgnoresPrunableWorktrees(t *testing.T) {
 	repo := initializedRepo(t)
 	gitTest(t, repo, "branch", "feature")

@@ -260,16 +260,7 @@ func matchingWorktree(entries []worktreeEntry, target ResolvedTarget) string {
 			return entry.Path
 		}
 	}
-	var detached string
-	for _, entry := range entries {
-		if usable(entry) && entry.Branch == "" && strings.EqualFold(entry.Commit, target.Commit) {
-			if detached != "" {
-				return ""
-			}
-			detached = entry.Path
-		}
-	}
-	return detached
+	return ""
 }
 
 func parsePRNumber(ref string) (int, bool) {
