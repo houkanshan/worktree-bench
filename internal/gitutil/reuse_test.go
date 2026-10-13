@@ -195,8 +195,8 @@ echo '{"state":"none"}'
 	}
 }
 
-func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
-	for _, scenario := range []string{"descendant", "older", "diverged", "missing", "empty", "promisor"} {
+func TestInspectReuseStatusMergedPRWithoutAncestryWithLocalGit(t *testing.T) {
+	for _, scenario := range []string{"descendant", "older", "diverged", "missing", "empty", "promisor", "no-upstream", "unpushed"} {
 		t.Run(scenario, func(t *testing.T) {
 			originalPath := os.Getenv("PATH")
 			worktree := setupReuseCommands(t)
@@ -222,6 +222,9 @@ func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
 			git("commit", "--allow-empty", "-m", "automatic formatting")
 			prHead := git("rev-parse", "HEAD")
 			git("checkout", "feature/test")
+			git("update-ref", "refs/heads/pushed", head)
+			git("config", "branch.feature/test.remote", ".")
+			git("config", "branch.feature/test.merge", "refs/heads/pushed")
 			fetchMarker := filepath.Join(t.TempDir(), "fetch-attempted")
 			switch scenario {
 			case "promisor":
@@ -249,6 +252,11 @@ func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
 				prHead = strings.Repeat("f", 40)
 			case "empty":
 				prHead = ""
+			case "no-upstream":
+				git("config", "--unset", "branch.feature/test.remote")
+			case "unpushed":
+				git("commit", "--allow-empty", "-m", "new local work")
+				head = git("rev-parse", "HEAD")
 			}
 			payload, err := json.Marshal(branchPRStatus{
 				Number: 42, State: "merged", HeadSHA: head, HeadRefOID: prHead,
@@ -258,12 +266,19 @@ func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
 			}
 			t.Setenv("PR_OUTPUT", string(payload))
 			status := InspectReuseStatus(worktree)
-			if scenario == "descendant" {
-				if status.Kind != "pr-merged" || status.Severity != "safe" || status.PR == nil {
-					t.Fatalf("merged descendant should be safe: %+v", status)
+			switch scenario {
+			case "no-upstream":
+				if status.Kind != "unknown" || status.Severity != "muted" {
+					t.Fatalf("unknown push status should remain unknown: %+v", status)
 				}
-			} else if status.Kind != "unknown" || status.Severity != "muted" {
-				t.Fatalf("unproved ancestry should remain unknown: %+v", status)
+			case "unpushed":
+				if status.Kind != "unpushed" || status.Severity != "warning" {
+					t.Fatalf("unpushed commits should remain protected: %+v", status)
+				}
+			default:
+				if status.Kind != "pr-merged" || status.Severity != "safe" || status.PR == nil {
+					t.Fatalf("pushed merged-PR work should be safe without ancestry: %+v", status)
+				}
 			}
 			if scenario == "promisor" {
 				if _, err := os.Stat(fetchMarker); !os.IsNotExist(err) {
@@ -279,12 +294,30 @@ func TestInspectReuseStatusMergedPRAncestryWithLocalGit(t *testing.T) {
 	}
 }
 
-func TestInspectReuseStatusRejectsMergedPRForAnOlderHead(t *testing.T) {
+func TestInspectReuseStatusAcceptsMergedPRForAnOlderHead(t *testing.T) {
 	worktree := setupReuseCommands(t)
 	t.Setenv("GIT_SCENARIO", "pushed")
 	t.Setenv("PR_OUTPUT", `{"state":"merged","number":42,"headSha":"abc123","headRefOid":"older","stale":false}`)
 	status := InspectReuseStatus(worktree)
-	if status.Kind != "unknown" || status.Severity != "muted" {
+	if status.Kind != "pr-merged" || status.Severity != "safe" {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestInspectReuseStatusRejectsInvalidMergedPRPayload(t *testing.T) {
+	for _, payload := range []string{
+		`{"state":"merged","number":42,"headSha":"abc123","stale":true}`,
+		`{"state":"merged","number":42,"headSha":"different-head"}`,
+		`{"state":"merged","number":42,"headSha":"abc123","error":"lookup failed"}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			worktree := setupReuseCommands(t)
+			t.Setenv("GIT_SCENARIO", "pushed")
+			t.Setenv("PR_OUTPUT", payload)
+			status := InspectReuseStatus(worktree)
+			if status.Kind != "unknown" || status.Severity != "muted" {
+				t.Fatalf("invalid merged-PR evidence should remain unknown: %+v", status)
+			}
+		})
 	}
 }
