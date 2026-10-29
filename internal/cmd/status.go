@@ -33,7 +33,12 @@ func newStatusCommand() *cobra.Command {
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			fast, _ := cmd.Flags().GetBool("fast")
 			allowedRoots, _ := cmd.Flags().GetStringArray("allowed-root")
+			noGit, _ := cmd.Flags().GetBool("no-git")
+			gitBenches, _ := cmd.Flags().GetStringArray("git-bench")
 			if jsonOutput {
+				if noGit || len(gitBenches) > 0 {
+					return writeSelectiveStatusJSON(settings, pool, allowedRoots, gitBenches)
+				}
 				return writeStatusJSON(repoRoot, settings, pool, fast, allowedRoots)
 			}
 
@@ -43,6 +48,8 @@ func newStatusCommand() *cobra.Command {
 	cmd.Flags().Bool("json", false, "print workbench status as JSON")
 	cmd.Flags().Bool("fast", false, "reuse cached status for JSON output and skip expensive diff on cache misses")
 	cmd.Flags().StringArray("allowed-root", nil, "limit JSON status checks to paths under these roots")
+	cmd.Flags().Bool("no-git", false, "JSON only: list workbenches without running Git checks")
+	cmd.Flags().StringArray("git-bench", nil, "JSON only: run Git reuse checks only for these workbench IDs (implies --no-git for others)")
 	return cmd
 }
 
@@ -101,6 +108,43 @@ func writeStatusJSON(repoRoot string, settings config.Settings, pool config.Pool
 	})
 }
 
+// writeSelectiveStatusJSON lists workbenches with only a directory existence
+// check, and runs Git reuse checks just for the requested IDs. Callers use it
+// to avoid inspecting every worktree when they act on one.
+func writeSelectiveStatusJSON(settings config.Settings, pool config.Pool, allowedRoots []string, gitBenches []string) error {
+	authorized, err := filterAllowedBenches(pool.Benches, allowedRoots)
+	if err != nil {
+		return err
+	}
+	wanted := make(map[string]bool, len(gitBenches))
+	for _, id := range gitBenches {
+		wanted[id] = true
+	}
+	selected := make([]config.Workbench, 0, len(gitBenches))
+	for _, workbench := range authorized {
+		if wanted[workbench.ID] {
+			selected = append(selected, workbench)
+		}
+	}
+	reuseStatuses := loadReuseStatuses(selected)
+	benches := make([]statusBenchJSON, 0, len(pool.Benches))
+	for _, workbench := range pool.Benches {
+		benchJSON := statusBenchJSON{ID: workbench.ID, Name: workbench.Name, Type: workbench.Type, Path: workbench.Path}
+		if _, err := os.Stat(workbench.Path); os.IsNotExist(err) {
+			benchJSON.DirMissing = true
+		}
+		if reuse, ok := reuseStatuses[workbench.ID]; ok {
+			benchJSON.Git = &reuse
+		}
+		benches = append(benches, benchJSON)
+	}
+	return json.NewEncoder(os.Stdout).Encode(statusJSON{
+		Types:        config.WorkbenchTypes(),
+		WorktreesDir: settings.WorktreesDir,
+		Benches:      benches,
+	})
+}
+
 func filterAllowedBenches(benches []config.Workbench, allowedRoots []string) ([]config.Workbench, error) {
 	authorized := make([]config.Workbench, 0, len(benches))
 	for _, workbench := range benches {
@@ -122,6 +166,9 @@ func loadReuseStatuses(authorized []config.Workbench) map[string]gitutil.ReuseSt
 	var mutex sync.Mutex
 	var group sync.WaitGroup
 	workerCount := workers
+	if len(authorized) == 0 {
+		return result
+	}
 	if len(authorized) < workerCount {
 		workerCount = len(authorized)
 	}
